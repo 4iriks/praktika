@@ -3,13 +3,23 @@ const namespacePrefix = 'pyanswer:mock:';
 
 export const mockStorageKeys = {
   users: prefix + 'users',
-  history: prefix + 'history',
-  saved: prefix + 'saved',
-  feedback: prefix + 'feedback',
   session: prefix + 'session',
 } as const;
 
-const legacyKeys = ['pyanswer.mock.session', 'pyanswer.mock.saved', 'pyanswer.mock.feedback'];
+export const mockUserStorageKeys = {
+  history: (userId: string) => prefix + 'user:' + encodeURIComponent(userId) + ':history',
+  saved: (userId: string) => prefix + 'user:' + encodeURIComponent(userId) + ':saved',
+  feedback: (userId: string) => prefix + 'user:' + encodeURIComponent(userId) + ':feedback',
+} as const;
+
+const legacyKeys = [
+  'pyanswer.mock.session',
+  'pyanswer.mock.saved',
+  'pyanswer.mock.feedback',
+  prefix + 'history',
+  prefix + 'saved',
+  prefix + 'feedback',
+];
 
 function available(): boolean {
   return typeof window !== 'undefined';

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { mockApi } from './mockApi';
 import { mockRepository } from './mockRepository';
-import { mockStorageKeys } from './mockStorage';
+import { mockStorageKeys, mockUserStorageKeys } from './mockStorage';
 import type { HistoryFilters, SearchHistoryItem, SearchRequest } from '../types';
 import { historyItemToParams } from '../utils/searchParams';
 
@@ -255,13 +255,13 @@ describe('mock user repository', () => {
 
   it('повреждённое mock storage безопасно сбрасывается', async () => {
     window.localStorage.setItem(mockStorageKeys.users, '{broken');
-    window.localStorage.setItem(mockStorageKeys.saved, 'not-an-array');
     expect(await mockRepository.getCurrentUser()).toBeNull();
     const demo = await mockRepository.login({
       email: 'user@pyanswer.local',
       password: 'Demo123!',
       remember: true,
     });
+    window.localStorage.setItem(mockUserStorageKeys.saved(demo.id), 'not-an-array');
     expect(demo.email).toBe('user@pyanswer.local');
     expect(mockRepository.getSavedEntries()).toEqual([]);
   });

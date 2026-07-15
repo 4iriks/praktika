@@ -20,6 +20,7 @@ import { emailPattern, isStrongPassword, normalizeEmail } from '../utils/validat
 import {
   clearMockStorage,
   mockStorageKeys,
+  mockUserStorageKeys,
   prepareMockStorage,
   readArray,
   readUnknown,
@@ -33,7 +34,6 @@ interface MockCredentialRecord {
 }
 
 interface MockSavedRecord {
-  userId: string;
   documentId: string;
   savedAt: string;
 }
@@ -129,8 +129,6 @@ function isSavedRecord(value: unknown): value is MockSavedRecord {
   return (
     typeof value === 'object' &&
     value !== null &&
-    'userId' in value &&
-    typeof value.userId === 'string' &&
     'documentId' in value &&
     typeof value.documentId === 'string' &&
     'savedAt' in value &&
@@ -425,52 +423,46 @@ function updateCurrentUser(request: UpdateProfileRequest): User {
   return user;
 }
 
-function savedRecords(): MockSavedRecord[] {
-  return readArray(window.localStorage, mockStorageKeys.saved, isSavedRecord);
+function savedRecords(userId: string): MockSavedRecord[] {
+  return readArray(window.localStorage, mockUserStorageKeys.saved(userId), isSavedRecord);
 }
 
 function getSavedEntries(): Array<{ documentId: string; savedAt: string }> {
   const userId = requireUserId();
-  return savedRecords()
-    .filter((record) => record.userId === userId)
-    .map(({ documentId, savedAt }) => ({ documentId, savedAt }));
+  return savedRecords(userId).map(({ documentId, savedAt }) => ({ documentId, savedAt }));
 }
 
 function getSavedDocumentIds(): Set<string> {
   const session = currentSession();
   if (!session) return new Set<string>();
-  return new Set(
-    savedRecords()
-      .filter((record) => record.userId === session.userId)
-      .map((record) => record.documentId),
-  );
+  return new Set(savedRecords(session.userId).map((record) => record.documentId));
 }
 
 function saveDocument(documentId: string): { documentId: string; savedAt: string } {
   const userId = requireUserId();
-  const records = savedRecords();
-  const existing = records.find(
-    (record) => record.userId === userId && record.documentId === documentId,
-  );
+  const records = savedRecords(userId);
+  const existing = records.find((record) => record.documentId === documentId);
   if (existing) return { documentId: existing.documentId, savedAt: existing.savedAt };
-  const record = { userId, documentId, savedAt: now() };
+  const record = { documentId, savedAt: now() };
   records.push(record);
-  writeJson(window.localStorage, mockStorageKeys.saved, records);
+  writeJson(window.localStorage, mockUserStorageKeys.saved(userId), records);
   return { documentId, savedAt: record.savedAt };
 }
 
 function unsaveDocument(documentId: string): void {
   const userId = requireUserId();
-  const records = savedRecords();
+  const records = savedRecords(userId);
   writeJson(
     window.localStorage,
-    mockStorageKeys.saved,
-    records.filter((record) => !(record.userId === userId && record.documentId === documentId)),
+    mockUserStorageKeys.saved(userId),
+    records.filter((record) => record.documentId !== documentId),
   );
 }
 
-function historyRecords(): SearchHistoryItem[] {
-  return readArray(window.localStorage, mockStorageKeys.history, isHistoryItem);
+function historyRecords(userId: string): SearchHistoryItem[] {
+  return readArray(window.localStorage, mockUserStorageKeys.history(userId), isHistoryItem).filter(
+    (item) => item.userId === userId,
+  );
 }
 
 function historyFingerprint(value: HistoryRecordInput | SearchHistoryItem): string {
@@ -487,10 +479,10 @@ function historyFingerprint(value: HistoryRecordInput | SearchHistoryItem): stri
 function recordHistory(input: HistoryRecordInput): SearchHistoryItem | null {
   const session = currentSession();
   if (!session || !input.query.trim()) return null;
-  const records = historyRecords();
-  const latest = records
-    .filter((record) => record.userId === session.userId)
-    .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt))[0];
+  const records = historyRecords(session.userId);
+  const latest = records.sort(
+    (left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt),
+  )[0];
   if (
     latest &&
     Date.now() - Date.parse(latest.createdAt) < 5_000 &&
@@ -505,15 +497,14 @@ function recordHistory(input: HistoryRecordInput): SearchHistoryItem | null {
     createdAt: now(),
   };
   records.push(item);
-  writeJson(window.localStorage, mockStorageKeys.history, records);
+  writeJson(window.localStorage, mockUserStorageKeys.history(session.userId), records);
   return item;
 }
 
 function getHistory(filters: HistoryFilters): HistoryResponse {
   const userId = requireUserId();
   const search = filters.search.trim().toLocaleLowerCase('ru-RU');
-  const items = historyRecords()
-    .filter((item) => item.userId === userId)
+  const items = historyRecords(userId)
     .filter((item) => !search || item.query.toLocaleLowerCase('ru-RU').includes(search))
     .filter((item) => filters.view === 'all' || item.view === filters.view)
     .filter((item) => filters.mode === 'all' || item.mode === filters.mode)
@@ -535,30 +526,26 @@ function deleteHistoryItem(historyId: string): void {
   const userId = requireUserId();
   writeJson(
     window.localStorage,
-    mockStorageKeys.history,
-    historyRecords().filter((item) => !(item.userId === userId && item.id === historyId)),
+    mockUserStorageKeys.history(userId),
+    historyRecords(userId).filter((item) => item.id !== historyId),
   );
 }
 
 function clearHistory(): void {
   const userId = requireUserId();
-  writeJson(
-    window.localStorage,
-    mockStorageKeys.history,
-    historyRecords().filter((item) => item.userId !== userId),
-  );
+  window.localStorage.removeItem(mockUserStorageKeys.history(userId));
 }
 
-function feedbackRecords(): Feedback[] {
-  return readArray(window.localStorage, mockStorageKeys.feedback, isFeedback);
+function feedbackRecords(userId: string): Feedback[] {
+  return readArray(window.localStorage, mockUserStorageKeys.feedback(userId), isFeedback).filter(
+    (item) => item.userId === userId,
+  );
 }
 
 function sendFeedback(request: FeedbackRequest): Feedback {
   const userId = requireUserId();
-  const records = feedbackRecords();
-  const index = records.findIndex(
-    (item) => item.userId === userId && item.responseId === request.responseId,
-  );
+  const records = feedbackRecords(userId);
+  const index = records.findIndex((item) => item.responseId === request.responseId);
   const existing = records[index];
   const timestamp = now();
   const feedback: Feedback = {
@@ -574,35 +561,32 @@ function sendFeedback(request: FeedbackRequest): Feedback {
   };
   if (index >= 0) records[index] = feedback;
   else records.push(feedback);
-  writeJson(window.localStorage, mockStorageKeys.feedback, records);
+  writeJson(window.localStorage, mockUserStorageKeys.feedback(userId), records);
   return feedback;
 }
 
 function getFeedbackForResponse(responseId: string): Feedback | null {
   const userId = requireUserId();
-  return (
-    feedbackRecords().find((item) => item.userId === userId && item.responseId === responseId) ??
-    null
-  );
+  return feedbackRecords(userId).find((item) => item.responseId === responseId) ?? null;
 }
 
 function deleteFeedback(feedbackId: string): void {
   const userId = requireUserId();
   writeJson(
     window.localStorage,
-    mockStorageKeys.feedback,
-    feedbackRecords().filter((item) => !(item.userId === userId && item.id === feedbackId)),
+    mockUserStorageKeys.feedback(userId),
+    feedbackRecords(userId).filter((item) => item.id !== feedbackId),
   );
 }
 
 function getUserStats(): UserStats {
   const userId = requireUserId();
-  const history = historyRecords().filter((item) => item.userId === userId);
+  const history = historyRecords(userId);
   return {
     documentSearches: history.filter((item) => item.view === 'documents').length,
     ragSearches: history.filter((item) => item.view === 'answer').length,
-    savedDocuments: savedRecords().filter((item) => item.userId === userId).length,
-    ratedAnswers: feedbackRecords().filter((item) => item.userId === userId).length,
+    savedDocuments: savedRecords(userId).length,
+    ratedAnswers: feedbackRecords(userId).length,
   };
 }
 
