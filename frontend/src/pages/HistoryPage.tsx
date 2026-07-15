@@ -44,6 +44,10 @@ export function HistoryPage() {
     queryKey: queryKeys.history.list(filters),
     queryFn: ({ signal }) => api.getHistory(filters, signal),
   });
+  const stats = useQuery({
+    queryKey: queryKeys.user.stats,
+    queryFn: ({ signal }) => api.getUserStats(signal),
+  });
   const deletion = useMutation({
     mutationFn: async (target: SearchHistoryItem | 'all') => {
       if (target === 'all') await api.clearHistory();
@@ -62,6 +66,11 @@ export function HistoryPage() {
   const updateFilters = (changes: Partial<HistoryFilters>) => {
     setFilters((current) => ({ ...current, ...changes, page: changes.page ?? 1 }));
   };
+  const hasHistory = stats.data
+    ? stats.data.documentSearches + stats.data.ragSearches > 0
+    : Boolean(history.data?.pagination.total);
+  const hasActiveFilters =
+    Boolean(filters.search.trim()) || filters.view !== 'all' || filters.mode !== 'all';
 
   return (
     <WorkspaceLayout technicalPanel={<AccountTechnicalPanel />}>
@@ -69,7 +78,9 @@ export function HistoryPage() {
         <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className="technical-label">Личная активность</p>
-            <h1 className="mt-2 text-2xl font-semibold tracking-tight text-ink">История запросов</h1>
+            <h1 className="mt-2 text-2xl font-semibold tracking-tight text-ink">
+              История запросов
+            </h1>
             <p className="mt-2 text-sm text-muted">
               Успешные поиски и RAG-ответы записываются автоматически.
             </p>
@@ -77,7 +88,7 @@ export function HistoryPage() {
           <Button
             variant="danger"
             size="sm"
-            disabled={!history.data?.pagination.total || deletion.isPending}
+            disabled={!hasHistory || deletion.isPending}
             onClick={() => setDeleteTarget('all')}
           >
             <Trash2 className="size-3.5" aria-hidden="true" />
@@ -154,16 +165,30 @@ export function HistoryPage() {
             <div className="panel grid min-h-72 place-items-center p-8 text-center">
               <div>
                 <CalendarClock className="mx-auto size-9 text-muted" aria-hidden="true" />
-                <h2 className="mt-4 font-semibold text-ink">История пока пуста</h2>
+                <h2 className="mt-4 font-semibold text-ink">
+                  {hasActiveFilters ? 'В истории ничего не найдено' : 'История пока пуста'}
+                </h2>
                 <p className="mt-2 max-w-md text-sm leading-6 text-muted">
-                  Выполните поиск документов или получите ответ ИИ. Неудачные запросы не записываются.
+                  {hasActiveFilters
+                    ? 'Измените поисковую фразу или фильтры личной истории.'
+                    : 'Выполните поиск документов или получите ответ ИИ. Неудачные запросы не записываются.'}
                 </p>
-                <Link
-                  to="/"
-                  className="mt-5 inline-flex h-9 items-center rounded-lg border border-accent bg-accent px-3 text-xs font-medium text-white"
-                >
-                  Начать поиск
-                </Link>
+                {hasActiveFilters ? (
+                  <Button
+                    className="mt-5"
+                    variant="primary"
+                    onClick={() => setFilters(defaultFilters)}
+                  >
+                    Сбросить фильтры
+                  </Button>
+                ) : (
+                  <Link
+                    to="/"
+                    className="mt-5 inline-flex h-9 items-center rounded-lg border border-accent bg-accent px-3 text-xs font-medium text-white"
+                  >
+                    Начать поиск
+                  </Link>
+                )}
               </div>
             </div>
           )}
@@ -238,7 +263,10 @@ function HistoryCard({
         <div className="mt-3 flex flex-wrap items-center gap-1.5">
           <Filter className="size-3 text-muted" aria-hidden="true" />
           {activeFilters.map((filter) => (
-            <span key={filter} className="rounded border border-line px-1.5 py-0.5 text-[10px] text-muted">
+            <span
+              key={filter}
+              className="rounded border border-line px-1.5 py-0.5 text-[10px] text-muted"
+            >
               {filter}
             </span>
           ))}

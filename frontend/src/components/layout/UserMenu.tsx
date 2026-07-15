@@ -53,9 +53,15 @@ export function UserMenu() {
           <p className="mt-1 font-mono text-[10px] text-success">Пользователь</p>
         </div>
         <nav className="py-1">
-          <MenuLink to="/profile" icon={UserRound}>Профиль</MenuLink>
-          <MenuLink to="/history" icon={Clock3}>История</MenuLink>
-          <MenuLink to="/saved" icon={Bookmark}>Сохранённые</MenuLink>
+          <MenuLink to="/profile" icon={UserRound}>
+            Профиль
+          </MenuLink>
+          <MenuLink to="/history" icon={Clock3}>
+            История
+          </MenuLink>
+          <MenuLink to="/saved" icon={Bookmark}>
+            Сохранённые
+          </MenuLink>
         </nav>
         <button
           type="button"

@@ -269,6 +269,7 @@ async function askQuestion(
   request: AskRequest,
   options: AskStreamOptions = {},
 ): Promise<AskResponse> {
+  const filters = request.filters ?? emptyFilters;
   maybeFail();
   options.onStage?.('searching');
   await delay(90, options.signal);
@@ -279,7 +280,7 @@ async function askQuestion(
       mode: request.mode,
       page: 1,
       pageSize: request.maxSources ?? 3,
-      filters: emptyFilters,
+      filters,
     },
     options.signal,
   );
@@ -327,13 +328,13 @@ async function askQuestion(
     view: 'answer',
     mode: request.mode,
     filters: {
-      tags: [],
-      minScore: 0,
-      acceptedOnly: false,
-      hasCodeOnly: false,
+      tags: filters.tags,
+      minScore: filters.minScore,
+      acceptedOnly: filters.acceptedOnly,
+      hasCodeOnly: filters.hasCodeOnly,
     },
-    sort: 'relevance',
-    pageSize: request.maxSources ?? 3,
+    sort: filters.sort,
+    pageSize: request.pageSize ?? 10,
     resultCount: selectedResults.length,
     tookMs: response.tookMs,
     answerPreview: answer
@@ -377,15 +378,15 @@ async function getSavedDocuments(
         !search ||
         item.title.toLocaleLowerCase('ru-RU').includes(search) ||
         item.snippet.toLocaleLowerCase('ru-RU').includes(search),
-    )
-    .filter((item) =>
-      filters.tags.length === 0
-        ? true
-        : filters.tags.every((slug) => item.tags.some((tag) => tag.slug === slug)),
     );
   const availableTags = [
     ...new Map(items.flatMap((item) => item.tags).map((tag) => [tag.slug, tag])).values(),
   ];
+  items = items.filter((item) =>
+    filters.tags.length === 0
+      ? true
+      : filters.tags.every((slug) => item.tags.some((tag) => tag.slug === slug)),
+  );
   items = items.sort((left, right) => {
     if (filters.sort === 'score') return right.questionScore - left.questionScore;
     if (filters.sort === 'publishedAt') {

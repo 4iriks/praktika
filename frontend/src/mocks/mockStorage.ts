@@ -42,7 +42,11 @@ export function writeJson(storage: Storage, key: string, value: unknown): void {
   storage.setItem(key, JSON.stringify(value));
 }
 
-export function readArray<T>(storage: Storage, key: string, guard: (value: unknown) => value is T): T[] {
+export function readArray<T>(
+  storage: Storage,
+  key: string,
+  guard: (value: unknown) => value is T,
+): T[] {
   const value = readUnknown(storage, key);
   if (value === null) return [];
   if (!Array.isArray(value)) {

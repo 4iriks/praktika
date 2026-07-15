@@ -1,14 +1,5 @@
 import { useMemo, useState, type FormEvent } from 'react';
-import {
-  ArrowLeft,
-  Check,
-  Circle,
-  Eye,
-  EyeOff,
-  LockKeyhole,
-  Mail,
-  UserRound,
-} from 'lucide-react';
+import { ArrowLeft, Check, Circle, Eye, EyeOff, LockKeyhole, Mail, UserRound } from 'lucide-react';
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { ApiError } from '../api';
@@ -54,7 +45,8 @@ export function RegisterPage() {
     if (name.length < 2) nextErrors.displayName = 'Имя должно содержать минимум 2 символа';
     if (!normalizedEmail) nextErrors.email = 'Введите email';
     else if (!emailPattern.test(normalizedEmail)) nextErrors.email = 'Укажите корректный email';
-    if (!Object.values(checks).every(Boolean)) nextErrors.password = 'Пароль не соответствует требованиям';
+    if (!Object.values(checks).every(Boolean))
+      nextErrors.password = 'Пароль не соответствует требованиям';
     if (!confirmation) nextErrors.confirmation = 'Подтвердите пароль';
     else if (confirmation !== password) nextErrors.confirmation = 'Пароли не совпадают';
     if (!acceptedTerms) nextErrors.terms = 'Необходимо принять правила использования';
@@ -95,7 +87,9 @@ export function RegisterPage() {
         <section className="panel overflow-hidden">
           <header className="border-b border-line bg-elevated/25 px-6 py-5">
             <Logo />
-            <h1 className="mt-6 text-xl font-semibold tracking-tight text-ink">Создание аккаунта</h1>
+            <h1 className="mt-6 text-xl font-semibold tracking-tight text-ink">
+              Создание аккаунта
+            </h1>
             <p className="mt-2 text-sm leading-6 text-muted">
               Локальный профиль для истории, настроек и сохранённых материалов.
             </p>
@@ -292,15 +286,29 @@ function VisibilityButton({
       className="absolute right-2 top-2 grid size-6 place-items-center rounded text-muted hover:text-ink disabled:opacity-50"
       aria-label={visible ? 'Скрыть ' + label : 'Показать ' + label}
     >
-      {visible ? <EyeOff className="size-4" aria-hidden="true" /> : <Eye className="size-4" aria-hidden="true" />}
+      {visible ? (
+        <EyeOff className="size-4" aria-hidden="true" />
+      ) : (
+        <Eye className="size-4" aria-hidden="true" />
+      )}
     </button>
   );
 }
 
 function PasswordRule({ passed, children }: { passed: boolean; children: React.ReactNode }) {
   return (
-    <span className={passed ? 'flex items-center gap-1.5 text-[11px] text-success' : 'flex items-center gap-1.5 text-[11px] text-muted'}>
-      {passed ? <Check className="size-3" aria-hidden="true" /> : <Circle className="size-2.5" aria-hidden="true" />}
+    <span
+      className={
+        passed
+          ? 'flex items-center gap-1.5 text-[11px] text-success'
+          : 'flex items-center gap-1.5 text-[11px] text-muted'
+      }
+    >
+      {passed ? (
+        <Check className="size-3" aria-hidden="true" />
+      ) : (
+        <Circle className="size-2.5" aria-hidden="true" />
+      )}
       {children}
     </span>
   );

@@ -115,9 +115,9 @@ export function ProfilePage() {
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
                 <h2 className="text-lg font-semibold text-ink">{user.displayName}</h2>
-                <Badge tone="success">
+                <Badge tone={user.accountStatus === 'ACTIVE' ? 'success' : 'danger'}>
                   <CheckCircle2 className="mr-1 size-3" aria-hidden="true" />
-                  Активен
+                  {user.accountStatus === 'ACTIVE' ? 'Активен' : 'Заблокирован'}
                 </Badge>
               </div>
               <p className="mt-1 text-sm text-muted">{user.email}</p>
@@ -169,7 +169,10 @@ export function ProfilePage() {
                 />
               </label>
               {profileError ? (
-                <p className="rounded-lg border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger" role="alert">
+                <p
+                  className="rounded-lg border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger"
+                  role="alert"
+                >
                   {profileError}
                 </p>
               ) : null}

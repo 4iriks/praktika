@@ -23,6 +23,7 @@ import type {
   FeedbackReason,
   FeedbackRequest,
   RagSource,
+  SearchFilters,
 } from '../../types';
 import { formatDuration, formatScore } from '../../utils/format';
 import { loginUrl } from '../../utils/returnTo';
@@ -39,13 +40,18 @@ import { useRagStream } from './useRagStream';
 interface RagAnswerProps {
   question: string;
   mode: AskRequest['mode'];
+  filters?: SearchFilters;
+  pageSize?: number;
   onResponse?: (response: AskResponse) => void;
 }
 
-export function RagAnswer({ question, mode, onResponse }: RagAnswerProps) {
+export function RagAnswer({ question, mode, filters, pageSize, onResponse }: RagAnswerProps) {
   const [retryKey, setRetryKey] = useState(0);
   const [negativeDialogOpen, setNegativeDialogOpen] = useState(false);
-  const request = useMemo<AskRequest>(() => ({ question, mode, maxSources: 3 }), [mode, question]);
+  const request = useMemo<AskRequest>(
+    () => ({ question, mode, maxSources: 3, filters, pageSize }),
+    [filters, mode, pageSize, question],
+  );
   const complete = useCallback((response: AskResponse) => onResponse?.(response), [onResponse]);
   const stream = useRagStream(request, retryKey, complete);
   const { user } = useAuth();
@@ -235,23 +241,25 @@ export function RagAnswer({ question, mode, onResponse }: RagAnswerProps) {
         </section>
       ) : null}
 
-      <NegativeFeedbackDialog
-        open={negativeDialogOpen}
-        initialReason={feedback.data?.value === 'negative' ? feedback.data.reason : undefined}
-        initialComment={feedback.data?.value === 'negative' ? feedback.data.comment : undefined}
-        loading={feedbackMutation.isPending}
-        onClose={() => setNegativeDialogOpen(false)}
-        onSubmit={(reason, comment) => {
-          if (!stream.data) return;
-          feedbackMutation.mutate({
-            responseId: stream.data.responseId,
-            value: 'negative',
-            question,
-            ...(reason ? { reason } : {}),
-            ...(comment.trim() ? { comment: comment.trim() } : {}),
-          });
-        }}
-      />
+      {negativeDialogOpen ? (
+        <NegativeFeedbackDialog
+          open
+          initialReason={feedback.data?.value === 'negative' ? feedback.data.reason : undefined}
+          initialComment={feedback.data?.value === 'negative' ? feedback.data.comment : undefined}
+          loading={feedbackMutation.isPending}
+          onClose={() => setNegativeDialogOpen(false)}
+          onSubmit={(reason, comment) => {
+            if (!stream.data) return;
+            feedbackMutation.mutate({
+              responseId: stream.data.responseId,
+              value: 'negative',
+              question,
+              ...(reason ? { reason } : {}),
+              ...(comment.trim() ? { comment: comment.trim() } : {}),
+            });
+          }}
+        />
+      ) : null}
     </article>
   );
 }
@@ -343,10 +351,15 @@ function NegativeFeedbackDialog({
         <h2 id="negative-feedback-title" className="text-base font-semibold text-ink">
           Что можно улучшить?
         </h2>
-        <p className="mt-2 text-xs leading-5 text-muted">Причину и комментарий можно не указывать.</p>
+        <p className="mt-2 text-xs leading-5 text-muted">
+          Причину и комментарий можно не указывать.
+        </p>
         <div className="mt-4 space-y-2">
           {feedbackReasons.map(([value, label]) => (
-            <label key={value} className="flex cursor-pointer items-center gap-2 text-sm text-muted">
+            <label
+              key={value}
+              className="flex cursor-pointer items-center gap-2 text-sm text-muted"
+            >
               <input
                 type="radio"
                 name="feedback-reason"

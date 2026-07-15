@@ -138,6 +138,22 @@ function isSavedRecord(value: unknown): value is MockSavedRecord {
   );
 }
 
+function isHistoryFilters(value: unknown): value is Omit<SearchFilters, 'sort'> {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'tags' in value &&
+    Array.isArray(value.tags) &&
+    value.tags.every((tag) => typeof tag === 'string') &&
+    'minScore' in value &&
+    typeof value.minScore === 'number' &&
+    'acceptedOnly' in value &&
+    typeof value.acceptedOnly === 'boolean' &&
+    'hasCodeOnly' in value &&
+    typeof value.hasCodeOnly === 'boolean'
+  );
+}
+
 function isHistoryItem(value: unknown): value is SearchHistoryItem {
   return (
     typeof value === 'object' &&
@@ -152,8 +168,20 @@ function isHistoryItem(value: unknown): value is SearchHistoryItem {
     ['documents', 'answer'].includes(String(value.view)) &&
     'mode' in value &&
     ['bm25', 'vector', 'hybrid'].includes(String(value.mode)) &&
+    'filters' in value &&
+    isHistoryFilters(value.filters) &&
+    'sort' in value &&
+    ['relevance', 'date', 'score'].includes(String(value.sort)) &&
+    'pageSize' in value &&
+    typeof value.pageSize === 'number' &&
+    'resultCount' in value &&
+    typeof value.resultCount === 'number' &&
+    'tookMs' in value &&
+    typeof value.tookMs === 'number' &&
     'createdAt' in value &&
-    typeof value.createdAt === 'string'
+    typeof value.createdAt === 'string' &&
+    (!('answerPreview' in value) || typeof value.answerPreview === 'string') &&
+    (!('insufficientContext' in value) || typeof value.insufficientContext === 'boolean')
   );
 }
 
@@ -168,7 +196,18 @@ function isFeedback(value: unknown): value is Feedback {
     'responseId' in value &&
     typeof value.responseId === 'string' &&
     'value' in value &&
-    ['positive', 'negative'].includes(String(value.value))
+    ['positive', 'negative'].includes(String(value.value)) &&
+    'question' in value &&
+    typeof value.question === 'string' &&
+    'createdAt' in value &&
+    typeof value.createdAt === 'string' &&
+    'updatedAt' in value &&
+    typeof value.updatedAt === 'string' &&
+    (!('reason' in value) ||
+      ['irrelevant_sources', 'factual_error', 'incomplete', 'unclear', 'other'].includes(
+        String(value.reason),
+      )) &&
+    (!('comment' in value) || typeof value.comment === 'string')
   );
 }
 
@@ -256,9 +295,7 @@ function readSessionFrom(storage: Storage): AuthSession | null {
 
 function currentSession(): AuthSession | null {
   prepareMockStorage();
-  return (
-    readSessionFrom(window.sessionStorage) ?? readSessionFrom(window.localStorage)
-  );
+  return readSessionFrom(window.sessionStorage) ?? readSessionFrom(window.localStorage);
 }
 
 function requireUserId(): string {
@@ -276,7 +313,11 @@ function createSession(userId: string, remember: boolean): void {
     expiresAt: new Date(Date.now() + expiresInMs).toISOString(),
     mockSessionVersion: sessionVersion,
   };
-  writeJson(remember ? window.localStorage : window.sessionStorage, mockStorageKeys.session, session);
+  writeJson(
+    remember ? window.localStorage : window.sessionStorage,
+    mockStorageKeys.session,
+    session,
+  );
 }
 
 function touchUser(record: MockCredentialRecord, records: MockCredentialRecord[]): User {
@@ -293,7 +334,8 @@ async function register(request: RegisterRequest): Promise<User> {
   const displayName = request.displayName.trim();
   if (displayName.length < 2) throw new ApiError('Имя должно содержать минимум 2 символа.', 422);
   if (!emailPattern.test(email)) throw new ApiError('Укажите корректный email.', 422);
-  if (!isStrongPassword(request.password)) throw new ApiError('Пароль не соответствует требованиям.', 422);
+  if (!isStrongPassword(request.password))
+    throw new ApiError('Пароль не соответствует требованиям.', 422);
   if (!request.acceptedTerms) throw new ApiError('Необходимо принять правила использования.', 422);
   const records = users();
   if (records.some((record) => normalizeEmail(record.user.email) === email)) {
@@ -317,7 +359,11 @@ async function register(request: RegisterRequest): Promise<User> {
   return user;
 }
 
-async function login(request: { email: string; password: string; remember: boolean }): Promise<User> {
+async function login(request: {
+  email: string;
+  password: string;
+  remember: boolean;
+}): Promise<User> {
   await ensureDemoUser();
   const records = users();
   const record = records.find(
@@ -363,9 +409,7 @@ function updateCurrentUser(request: UpdateProfileRequest): User {
   if (displayName.length < 2) throw new ApiError('Имя должно содержать минимум 2 символа.', 422);
   if (!emailPattern.test(email)) throw new ApiError('Укажите корректный email.', 422);
   if (
-    records.some(
-      (item) => item.user.id !== userId && normalizeEmail(item.user.email) === email,
-    )
+    records.some((item) => item.user.id !== userId && normalizeEmail(item.user.email) === email)
   ) {
     throw new ApiError('Пользователь с таким email уже существует.', 409);
   }
@@ -374,9 +418,7 @@ function updateCurrentUser(request: UpdateProfileRequest): User {
     displayName,
     email,
     lastActiveAt: now(),
-    preferences: request.preferences
-      ? { ...request.preferences }
-      : { ...record.user.preferences },
+    preferences: request.preferences ? { ...request.preferences } : { ...record.user.preferences },
   };
   records[index] = { ...record, user };
   saveUsers(records);
@@ -539,9 +581,8 @@ function sendFeedback(request: FeedbackRequest): Feedback {
 function getFeedbackForResponse(responseId: string): Feedback | null {
   const userId = requireUserId();
   return (
-    feedbackRecords().find(
-      (item) => item.userId === userId && item.responseId === responseId,
-    ) ?? null
+    feedbackRecords().find((item) => item.userId === userId && item.responseId === responseId) ??
+    null
   );
 }
 

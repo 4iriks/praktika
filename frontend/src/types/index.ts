@@ -128,6 +128,8 @@ export interface AskRequest {
   mode: SearchMode;
   maxSources?: number;
   documentId?: string;
+  filters?: SearchFilters;
+  pageSize?: number;
 }
 
 export type RagResponseId = string;

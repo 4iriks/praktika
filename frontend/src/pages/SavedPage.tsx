@@ -130,7 +130,8 @@ export function SavedPage() {
                 <Bookmark className="mx-auto size-9 text-muted" aria-hidden="true" />
                 <h2 className="mt-4 font-semibold text-ink">Нет сохранённых документов</h2>
                 <p className="mt-2 max-w-md text-sm leading-6 text-muted">
-                  Сохраняйте полезные результаты поиска и источники RAG, чтобы вернуться к ним позже.
+                  Сохраняйте полезные результаты поиска и источники RAG, чтобы вернуться к ним
+                  позже.
                 </p>
                 <Link
                   to="/"

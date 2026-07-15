@@ -127,7 +127,13 @@ export function SearchPage() {
           {!request.q ? (
             <EmptyQueryState />
           ) : request.view === 'answer' ? (
-            <RagAnswer question={request.q} mode={request.mode} onResponse={completeRag} />
+            <RagAnswer
+              question={request.q}
+              mode={request.mode}
+              filters={request.filters}
+              pageSize={request.pageSize}
+              onResponse={completeRag}
+            />
           ) : documentsQuery.isLoading ? (
             <ResultsSkeleton />
           ) : documentsQuery.isError ? (

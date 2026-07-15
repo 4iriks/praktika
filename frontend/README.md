@@ -1,21 +1,26 @@
 # PyAnswer frontend
 
-PyAnswer — локальный интеллектуальный поиск по синтетической русскоязычной базе вопросов и
-ответов о Python. Первый этап реализует законченный пользовательский сценарий
-«главная → поиск или RAG-ответ → документ» без backend, базы данных, Qdrant и прямого доступа к
-Ollama.
+PyAnswer — локальная интеллектуальная поисковая система по синтетической русскоязычной базе
+вопросов и ответов о Python. Frontend реализует законченный пользовательский контур:
+
+`регистрация → вход → поиск или RAG → история → сохранённые документы → профиль → feedback`.
+
+Этап 2 работает без backend, PostgreSQL, Qdrant и настоящего Ollama. Поиск, RAG и
+пользовательские операции обслуживает типизированный mock-адаптер. Существующий сценарий Этапа 1
+«главная → поиск или RAG → документ» сохранён.
 
 ## Стек
 
-- React 18, TypeScript strict, Vite;
-- React Router и TanStack Query;
-- Tailwind CSS, Lucide React, Sonner;
+- React 18 и TypeScript в strict-режиме;
+- Vite, React Router и TanStack Query;
+- Tailwind CSS, Lucide React и Sonner;
 - React Markdown, remark-gfm и react-syntax-highlighter;
-- Vitest, Testing Library, ESLint и Prettier.
+- Vitest, Testing Library, ESLint и Prettier;
+- production multi-stage Docker image с nginx.
 
-Требуется Node.js 18+ и npm 9+.
+Требуются Node.js 18+ и npm 9+.
 
-## Запуск
+## Локальный запуск
 
 ```bash
 cd frontend
@@ -24,111 +29,217 @@ npm install
 npm run dev
 ```
 
-Vite откроет приложение на http://localhost:5173.
+Vite запускает приложение по адресу `http://localhost:5173`.
 
-Проверки:
+Полная проверка:
 
 ```bash
 npm run typecheck
 npm run lint
 npm run test
 npm run build
+npm run format:check
 ```
 
-Production bundle создаётся в каталоге dist.
+## Маршруты
+
+Публичные маршруты:
+
+- `/` — Spotlight-поиск, состояние индекса и вход в пользовательский контур;
+- `/search` — документная выдача и mock RAG с URL-состоянием;
+- `/documents/:documentId` — полная ветка вопроса и ответов;
+- `/login` — вход с безопасным `returnTo`;
+- `/register` — регистрация и автоматический вход;
+- `/403` — недостаточно прав;
+- `*` — страница 404.
+
+Маршруты под `ProtectedRoute`:
+
+- `/profile` — профиль, статистика и поисковые настройки;
+- `/history` — личная история поисков и RAG-запросов;
+- `/saved` — личная библиотека документов.
+
+Неавторизованный пользователь перенаправляется на `/login`. Параметр `returnTo` принимает только
+внутренний путь, начинающийся с одного `/`; внешние URL и пути вида `//example.org` отклоняются.
+
+Поддерживаемые параметры `/search`: `q`, `view`, `mode`, `page`, `page_size`, `tags`, `min_score`,
+`accepted`, `has_code`, `sort`. Явные параметры URL имеют приоритет над настройками профиля.
 
 ## Mock-режим
 
-По умолчанию VITE_USE_MOCKS=true. Адаптер имитирует задержки, фильтрацию, сортировку,
-pagination, сохранение документов, сессию, стадии RAG и потоковую выдачу ответа. В наборе 22
-синтетических документа; тексты реальных публикаций не копируются.
+По умолчанию используется `VITE_USE_MOCKS=true`. Mock API имитирует задержки, ошибки,
+фильтрацию, сортировку, pagination, streaming RAG и server-like пользовательские операции. В базе
+22 синтетических документа; большие фрагменты реальных публикаций не копируются.
 
-Для проверки error state:
-
-```env
-VITE_MOCK_FORCE_ERROR=true
-```
-
-Также запрос **error** возвращает тестовую ошибку поиска. Запрос вне тематики, например
-«квантовая хромодинамика», демонстрирует недостаточный контекст RAG.
-
-Mock-аккаунт:
+Демонстрационный аккаунт:
 
 ```text
 user@pyanswer.local
 Demo123!
 ```
 
-Сессия содержит только объект демонстрационного пользователя. Access token не создаётся и не
-хранится.
+Дополнительные аккаунты создаются на `/register`. Email сравнивается без учёта регистра, пароль
+проверяется по требованиям формы, всем новым пользователям назначается роль `USER`.
 
-## Маршруты
+Для принудительной проверки error state:
 
-- / — Spotlight-поиск и системная сводка;
-- /search — документы и RAG, состояние хранится в query string;
-- /documents/:documentId — полная ветка вопроса и ответов;
-- /login — демонстрационный вход;
-- /403 — недостаточно прав;
-- - — 404.
+```env
+VITE_MOCK_FORCE_ERROR=true
+```
 
-Поддерживаемые параметры /search: q, view, mode, page, tags, min_score, accepted, has_code, sort.
+Запрос `__error__` также вызывает тестовую ошибку поиска. Запрос вне локальной тематики, например
+«квантовая хромодинамика», демонстрирует RAG-сценарий недостаточного контекста.
 
-## Структура
+### Mock credentials и сессия
+
+Пользовательское mock-хранилище изолировано в `src/mocks` и использует versioned namespace
+`pyanswer:mock:v1:*`. UI-компоненты не управляют auth-сессией напрямую.
+
+- mock credentials содержат случайную salt и digest Web Crypto, но не открытый пароль;
+- публичный `User` не содержит password, digest или salt;
+- сессия содержит только `userId`, `expiresAt` и `mockSessionVersion`;
+- при «Запомнить меня» ссылка сессии хранится в `localStorage`;
+- без запоминания ссылка сессии хранится в `sessionStorage`;
+- повреждённые JSON-записи безопасно отбрасываются;
+- данные истории, сохранений, preferences и feedback разделены по `userId`.
+
+Browser-side digest — только демонстрационный mock-механизм и не является безопасной
+production-аутентификацией. В следующем серверном этапе проверка credentials должна выполняться в
+FastAPI с Argon2, а сессия — передаваться через защищённую `HttpOnly` cookie. Frontend не хранит
+секреты и не добавляет Bearer-заголовок.
+
+Чтобы сбросить mock-данные, откройте DevTools → Application → Storage → Clear site data или удалите
+ключи с префиксом `pyanswer:mock:` из Local Storage и Session Storage для локального origin.
+
+### История, сохранения и feedback
+
+- успешный поиск или RAG авторизованного пользователя автоматически создаёт одну запись истории;
+- пустые, гостевые и неуспешные запросы не записываются;
+- быстрые технические повторы дедуплицируются;
+- повтор из истории восстанавливает режим, представление, фильтры, сортировку и размер страницы;
+- сохранение документа идемпотентно и синхронизируется через точечную invalidation TanStack Query;
+- у пользователя может быть только одна актуальная оценка конкретного RAG-response;
+- positive/negative feedback можно изменить или удалить;
+- отрицательная оценка поддерживает необязательную причину и комментарий до 500 символов.
+
+## Пользовательские настройки
+
+На `/profile` сохраняются индивидуальные значения:
+
+- режим поиска по умолчанию: BM25, Vector или Hybrid;
+- представление по умолчанию: документы или ответ ИИ;
+- 10, 20 или 50 результатов на странице;
+- автоматическое раскрытие технических score;
+- подтверждение перехода на внешний источник.
+
+Настройки применяются к новым поискам с главной страницы и не заменяют явно переданные параметры
+URL. Изменение email проверяет формат и уникальность, не завершает текущую сессию и применяется к
+следующему входу.
+
+## Архитектура
 
 ```text
 src/
-  api/          HTTP-клиент, контракт и выбор адаптера
-  app/          корневые providers и Error Boundary
-  components/   UI и layout-компоненты
-  features/     auth, search, rag, documents
+  api/          единый контракт, mock/HTTP selection, query keys и cache helpers
+  app/          providers, QueryClient и Error Boundary
+  components/   UI, dialogs, navigation и технические панели
+  features/     auth, search, RAG и documents
   hooks/        общие клавиатурные хуки
-  layouts/      workspace
-  mocks/        данные и mock API
+  layouts/      адаптивный workspace с mobile drawers
+  mocks/        данные, repository, versioned storage и mock API
   pages/        маршрутные страницы
-  routes/       таблица маршрутов
-  store/        тема
-  test/         тестовая настройка
-  types/        доменные TypeScript-типы
-  utils/        URL, форматирование и служебные функции
+  routes/       конфигурация публичных и защищённых маршрутов
+  store/        тема интерфейса
+  test/         тестовые providers и browser setup
+  types/        публичные доменные TypeScript-типы
+  utils/        URL, валидация и форматирование
 ```
+
+Server-like данные пользователя находятся в TanStack Query: current user, статистика, история,
+сохранённые документы и feedback. `AuthContext` предоставляет только auth-status, текущего
+пользователя и auth-actions. При logout удаляется пользовательская часть query cache, системный
+status cache сохраняется.
+
+Основные новые типы Этапа 2: `RegisterRequest`, `LoginRequest`, `AuthSession`, `AuthStatus`,
+`AccountStatus`, `UpdateProfileRequest`, `UserPreferences`, `UserStats`, `SearchHistoryItem`,
+`HistoryFilters`, `HistoryResponse`, `SavedDocument`, `SavedDocumentsFilters`,
+`SavedDocumentsResponse`, `FeedbackValue`, `FeedbackReason`, `Feedback` и `RagResponseId`.
 
 ## API adapter и будущий FastAPI
 
-Все feature-компоненты используют объект api из src/api/index.ts. При VITE_USE_MOCKS=false
-выбирается httpApi, который обращается только к VITE_API_BASE_URL. Предусмотрены методы:
+Страницы и feature-компоненты не вызывают `fetch` напрямую. Они используют `api` из
+`src/api/index.ts`, который выбирает одинаково типизированные `mockApi` или `httpApi`. HTTP-адаптер
+всегда отправляет `credentials: 'include'` для будущей cookie-сессии.
 
-- searchDocuments → GET /search;
-- askQuestion → POST /ask;
-- getDocument → GET /documents/:id;
-- login, logout, getCurrentUser → /auth/\*;
-- saveDocument, unsaveDocument → /saved/:documentId;
-- sendFeedback → POST /feedback.
+Поиск и документы:
 
-Чтобы подключить FastAPI:
+- `searchDocuments` → `GET /api/search`;
+- `askQuestion` → `POST /api/ask`;
+- `getDocument` → `GET /api/documents/:documentId`;
+- `getSystemStatus` → `GET /api/status`.
 
-1. реализовать перечисленные JSON endpoint с типами из src/types;
-2. настроить CORS для origin frontend и cookie-сессию при необходимости;
-3. установить VITE_USE_MOCKS=false;
-4. указать VITE_API_BASE_URL=http://localhost:8000/api;
-5. перезапустить Vite или пересобрать production bundle.
+Аутентификация и профиль:
 
-Интеграция потокового FastAPI/SSE локализована в httpApi.askQuestion; UI уже принимает чанки и
-технические стадии. Ollama должен вызываться только backend-сервисом.
+- `register` → `POST /api/auth/register`;
+- `login` → `POST /api/auth/login`;
+- `logout` → `POST /api/auth/logout`;
+- `getCurrentUser` → `GET /api/auth/me`;
+- `updateCurrentUser` → `PATCH /api/users/me`;
+- `getUserStats` → `GET /api/users/me/stats`.
+
+История, сохранения и feedback:
+
+- `getHistory` → `GET /api/history`;
+- `deleteHistoryItem` → `DELETE /api/history/:historyId`;
+- `clearHistory` → `DELETE /api/history`;
+- `getSavedDocuments` → `GET /api/saved`;
+- `saveDocument` → `POST /api/saved/:documentId`;
+- `unsaveDocument` → `DELETE /api/saved/:documentId`;
+- `sendFeedback` → `POST /api/feedback`;
+- `deleteFeedback` → `DELETE /api/feedback/:feedbackId`;
+- `getFeedbackForResponse` → `GET /api/feedback/by-response/:responseId`.
+
+Для подключения FastAPI:
+
+1. реализовать endpoint с JSON-контрактами из `src/types`;
+2. хранить credentials и Argon2 digest только на сервере;
+3. выдавать сессионную `HttpOnly`, `Secure`, `SameSite` cookie;
+4. настроить CORS с credentials для точного frontend origin;
+5. установить `VITE_USE_MOCKS=false`;
+6. задать `VITE_API_BASE_URL=http://localhost:8000/api`;
+7. перезапустить Vite или пересобрать production bundle.
+
+Прямая интеграция браузера с Ollama не предусмотрена: будущий локальный LLM вызывается только
+backend-сервисом.
 
 ## Переменные окружения
 
-| Переменная            | Значение по умолчанию     | Назначение                          |
-| --------------------- | ------------------------- | ----------------------------------- |
-| VITE_USE_MOCKS        | true                      | Выбор mock или HTTP adapter         |
-| VITE_API_BASE_URL     | http://localhost:8000/api | Базовый URL будущего FastAPI        |
-| VITE_MOCK_FORCE_ERROR | false                     | Принудительный error state mock API |
+| Переменная            | Значение по умолчанию     | Назначение                   |
+| --------------------- | ------------------------- | ---------------------------- |
+| VITE_USE_MOCKS        | true                      | Выбор mock или HTTP adapter  |
+| VITE_API_BASE_URL     | http://localhost:8000/api | Базовый URL будущего FastAPI |
+| VITE_MOCK_FORCE_ERROR | false                     | Принудительный mock error    |
 
-## Docker production build
+`.env.example` не содержит секретов.
+
+## Production build и Docker
+
+Локальная production-сборка:
+
+```bash
+npm run build
+npm run preview
+```
+
+Bundle создаётся в `dist/`.
+
+Docker frontend:
 
 ```bash
 docker build -t pyanswer-frontend .
 docker run --rm -p 8080:80 pyanswer-frontend
 ```
 
-Multi-stage образ собирает Vite bundle и обслуживает его через nginx. Конфигурация включает
-fallback React Router, immutable cache для assets и healthcheck /healthz.
+Multi-stage image собирает Vite bundle и обслуживает его через nginx. Конфигурация включает React
+Router fallback, immutable cache для assets и healthcheck `/healthz`. Полный `docker-compose` на
+этом этапе не используется.

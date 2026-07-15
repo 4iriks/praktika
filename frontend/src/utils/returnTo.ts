@@ -8,11 +8,7 @@ export function isSafeReturnTo(value: string | null | undefined): value is strin
   );
 }
 
-export function getSafeReturnTo(
-  search: string,
-  state: unknown,
-  fallback: string,
-): string {
+export function getSafeReturnTo(search: string, state: unknown, fallback: string): string {
   const fromQuery = new URLSearchParams(search).get('returnTo');
   if (isSafeReturnTo(fromQuery)) return fromQuery;
 

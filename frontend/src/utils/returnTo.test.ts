@@ -3,9 +3,9 @@ import { getSafeReturnTo, isSafeReturnTo } from './returnTo';
 
 describe('safe returnTo', () => {
   it('разрешает внутренний путь с query string', () => {
-    expect(
-      getSafeReturnTo('?returnTo=%2Fsaved%3Ftag%3Dpython', null, '/profile'),
-    ).toBe('/saved?tag=python');
+    expect(getSafeReturnTo('?returnTo=%2Fsaved%3Ftag%3Dpython', null, '/profile')).toBe(
+      '/saved?tag=python',
+    );
   });
 
   it('отклоняет внешний и protocol-relative адрес', () => {

@@ -54,6 +54,37 @@ describe('mock user repository', () => {
     expect(history.items[0]?.resultCount).toEqual(expect.any(Number));
   });
 
+  it('RAG-история сохраняет фильтры и размер страницы для повтора', async () => {
+    await register('rag-history@example.local');
+    await mockApi.askQuestion({
+      question: 'asyncio gather',
+      mode: 'vector',
+      maxSources: 3,
+      pageSize: 20,
+      filters: {
+        tags: ['asyncio'],
+        minScore: 10,
+        acceptedOnly: true,
+        hasCodeOnly: true,
+        sort: 'score',
+      },
+    });
+
+    const item = mockRepository.getHistory(historyFilters).items[0];
+    expect(item).toMatchObject({
+      view: 'answer',
+      mode: 'vector',
+      pageSize: 20,
+      sort: 'score',
+      filters: {
+        tags: ['asyncio'],
+        minScore: 10,
+        acceptedOnly: true,
+        hasCodeOnly: true,
+      },
+    });
+  });
+
   it('гостевой поиск не создаёт историю будущему пользователю', async () => {
     await mockApi.searchDocuments(searchRequest);
     await register('guest-after-search@example.local');
@@ -146,9 +177,9 @@ describe('mock user repository', () => {
     await register('owner@example.local');
     mockRepository.logout();
     await register('second-owner@example.local');
-    expect(() =>
-      mockRepository.updateCurrentUser({ email: 'OWNER@EXAMPLE.LOCAL' }),
-    ).toThrow('Пользователь с таким email уже существует.');
+    expect(() => mockRepository.updateCurrentUser({ email: 'OWNER@EXAMPLE.LOCAL' })).toThrow(
+      'Пользователь с таким email уже существует.',
+    );
   });
 
   it('сохраняет positive feedback', async () => {
@@ -199,6 +230,27 @@ describe('mock user repository', () => {
     await register('credentials@example.local');
     expect(window.localStorage.getItem(mockStorageKeys.users)).not.toContain('Strong123');
     expect(window.localStorage.getItem(mockStorageKeys.session)).not.toContain('Strong123');
+  });
+
+  it('хранит незапомненную сессию минимально и только в sessionStorage', async () => {
+    await mockRepository.register({
+      displayName: 'Session User',
+      email: 'short-session@example.local',
+      password: 'Strong123',
+      acceptedTerms: true,
+      remember: false,
+    });
+    const stored: unknown = JSON.parse(
+      window.sessionStorage.getItem(mockStorageKeys.session) ?? 'null',
+    );
+    expect(window.localStorage.getItem(mockStorageKeys.session)).toBeNull();
+    expect(stored).not.toBeNull();
+    expect(typeof stored).toBe('object');
+    if (typeof stored !== 'object' || stored === null) throw new Error('Сессия не сохранена');
+    expect('userId' in stored && typeof stored.userId === 'string').toBe(true);
+    expect('expiresAt' in stored && typeof stored.expiresAt === 'string').toBe(true);
+    expect('mockSessionVersion' in stored && stored.mockSessionVersion === 1).toBe(true);
+    expect(Object.keys(stored).sort()).toEqual(['expiresAt', 'mockSessionVersion', 'userId']);
   });
 
   it('повреждённое mock storage безопасно сбрасывается', async () => {
