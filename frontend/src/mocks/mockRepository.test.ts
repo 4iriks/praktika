@@ -51,7 +51,7 @@ describe('mock user repository', () => {
       view: 'documents',
       mode: 'hybrid',
     });
-    expect(history.items[0]?.resultCount).toEqual(expect.any(Number));
+    expect(typeof history.items[0]?.resultCount).toBe('number');
   });
 
   it('RAG-история сохраняет фильтры и размер страницы для повтора', async () => {

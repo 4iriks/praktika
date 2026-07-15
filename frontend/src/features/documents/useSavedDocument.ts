@@ -3,7 +3,9 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { api } from '../../api';
+import { updateSavedDocumentCache } from '../../api/queryCache';
 import { queryKeys } from '../../api/queryKeys';
+import type { Document, SearchResponse } from '../../types';
 import { useAuth } from '../auth/useAuth';
 import { loginUrl } from '../../utils/returnTo';
 
@@ -24,18 +26,27 @@ export function useSavedDocument(documentId: string, initiallySaved: boolean) {
     },
     onMutate: (nextSaved) => {
       const previous = saved;
+      const searchSnapshot = queryClient.getQueriesData<SearchResponse>({
+        queryKey: queryKeys.search.root,
+      });
+      const documentSnapshot = queryClient.getQueryData<Document>(
+        queryKeys.document.detail(documentId),
+      );
       setSaved(nextSaved);
-      return { previous };
+      updateSavedDocumentCache(queryClient, documentId, nextSaved);
+      return { previous, searchSnapshot, documentSnapshot };
     },
     onSuccess: (nextSaved) => {
       toast.success(nextSaved ? 'Документ сохранён' : 'Документ удалён из сохранённых');
-      void queryClient.invalidateQueries({ queryKey: queryKeys.document.detail(documentId) });
-      void queryClient.invalidateQueries({ queryKey: queryKeys.search.root });
       void queryClient.invalidateQueries({ queryKey: queryKeys.saved.root });
       void queryClient.invalidateQueries({ queryKey: queryKeys.user.stats });
     },
     onError: (_, __, context) => {
       setSaved(context?.previous ?? initiallySaved);
+      for (const [queryKey, data] of context?.searchSnapshot ?? []) {
+        queryClient.setQueryData(queryKey, data);
+      }
+      queryClient.setQueryData(queryKeys.document.detail(documentId), context?.documentSnapshot);
       toast.error('Не удалось изменить сохранённые документы');
     },
   });
