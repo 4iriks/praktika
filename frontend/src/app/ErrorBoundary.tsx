@@ -31,11 +31,14 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
             <AlertOctagon className="mx-auto mt-8 size-9 text-danger" aria-hidden="true" />
             <h1 className="mt-4 text-xl font-semibold text-ink">Интерфейс столкнулся с ошибкой</h1>
             <p className="mt-2 text-sm leading-6 text-muted">
-              Локальные данные не повреждены. Перезагрузите страницу, чтобы восстановить рабочее
-              пространство.
+              Локальные данные не повреждены. Попробуйте повторно открыть рабочее пространство.
             </p>
-            <Button className="mt-6" variant="primary" onClick={() => window.location.reload()}>
-              Перезагрузить
+            <Button
+              className="mt-6"
+              variant="primary"
+              onClick={() => this.setState({ failed: false })}
+            >
+              Повторить
             </Button>
           </div>
         </main>

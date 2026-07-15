@@ -25,7 +25,7 @@ function Metric({ label, value }: { label: string; value: string }) {
 export function TechnicalPanel({ request, searchResponse, askResponse }: TechnicalPanelProps) {
   const status = useQuery({
     queryKey: queryKeys.system.status,
-    queryFn: ({ signal }) => api.getSystemStatus(signal),
+    queryFn: ({ signal }) => api.getPublicSystemStatus(signal),
   });
   const sources = askResponse?.sources ?? [];
 

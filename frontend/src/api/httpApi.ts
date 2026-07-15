@@ -1,18 +1,47 @@
 import type {
   AskRequest,
   AskResponse,
+  AdminDashboard,
+  AdminUser,
+  AdminUserDetail,
+  AdminUserFilters,
+  AdminUsersResponse,
+  AuditEvent,
+  AuditEventsResponse,
+  AuditFilters,
+  BackgroundJob,
+  BlockUserRequest,
+  BulkDocumentRequest,
+  BulkDocumentResult,
+  ChangeRoleRequest,
   Document,
+  EditorDashboard,
   Feedback,
   FeedbackRequest,
   HistoryFilters,
   HistoryResponse,
+  JobFilters,
+  JobsResponse,
   LoginRequest,
+  ManagedDocumentDetail,
+  ManagedDocumentFilters,
+  ManagedDocumentsResponse,
+  ManagedDocumentUpdate,
+  PublicAccessPolicy,
+  PublicSystemStatus,
   RegisterRequest,
   SavedDocument,
   SavedDocumentsFilters,
   SavedDocumentsResponse,
   SearchRequest,
   SearchResponse,
+  Source,
+  SourceConnectionResult,
+  SourceFilters,
+  SourcesResponse,
+  SourceUpdateRequest,
+  SystemSettings,
+  SystemSettingsUpdate,
   SystemStatus,
   UpdateProfileRequest,
   User,
@@ -39,6 +68,8 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 
   if (!response.ok) {
     let message = 'Сервис временно недоступен.';
+    let code: ConstructorParameters<typeof ApiError>[2];
+    let details: ConstructorParameters<typeof ApiError>[3];
     try {
       const payload: unknown = await response.json();
       if (
@@ -49,10 +80,35 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
       ) {
         message = payload.message;
       }
+      if (
+        typeof payload === 'object' &&
+        payload !== null &&
+        'code' in payload &&
+        [
+          'BAD_REQUEST',
+          'UNAUTHORIZED',
+          'FORBIDDEN',
+          'NOT_FOUND',
+          'CONFLICT',
+          'VALIDATION_ERROR',
+          'INTERNAL_ERROR',
+        ].includes(String(payload.code))
+      ) {
+        code = payload.code as ConstructorParameters<typeof ApiError>[2];
+      }
+      if (
+        typeof payload === 'object' &&
+        payload !== null &&
+        'details' in payload &&
+        typeof payload.details === 'object' &&
+        payload.details !== null
+      ) {
+        details = payload.details as ConstructorParameters<typeof ApiError>[3];
+      }
     } catch {
       message = response.statusText || message;
     }
-    throw new ApiError(message, response.status);
+    throw new ApiError(message, response.status, code, details);
   }
 
   if (response.status === 204) return undefined as T;
@@ -95,6 +151,80 @@ function savedQuery(filters: SavedDocumentsFilters): string {
   });
   if (filters.tags.length > 0) params.set('tags', filters.tags.join(','));
   return params.toString();
+}
+
+function managedDocumentsQuery(filters: ManagedDocumentFilters): string {
+  const params = new URLSearchParams({
+    q: filters.q,
+    status: filters.status,
+    accepted: filters.accepted,
+    has_code: filters.hasCode,
+    bm25: filters.bm25,
+    vector: filters.vector,
+    source: filters.source,
+    updated_after: filters.updatedAfter,
+    sort: filters.sort,
+    page: String(filters.page),
+    limit: String(filters.limit),
+  });
+  if (filters.tags.length > 0) params.set('tags', filters.tags.join(','));
+  return params.toString();
+}
+
+function jobsQuery(filters: JobFilters): string {
+  return new URLSearchParams({
+    id: filters.id,
+    type: filters.type,
+    status: filters.status,
+    stage: filters.stage,
+    actor: filters.actor,
+    document_id: filters.documentId,
+    source: filters.source,
+    date_from: filters.dateFrom,
+    date_to: filters.dateTo,
+    sort: filters.sort,
+    page: String(filters.page),
+    limit: String(filters.limit),
+  }).toString();
+}
+
+function usersQuery(filters: AdminUserFilters): string {
+  return new URLSearchParams({
+    q: filters.q,
+    role: filters.role,
+    status: filters.status,
+    registered_from: filters.registeredFrom,
+    registered_to: filters.registeredTo,
+    sort: filters.sort,
+    page: String(filters.page),
+    limit: String(filters.limit),
+  }).toString();
+}
+
+function sourcesQuery(filters: SourceFilters): string {
+  return new URLSearchParams({
+    q: filters.q,
+    status: filters.status,
+    enabled: filters.enabled,
+    page: String(filters.page),
+    limit: String(filters.limit),
+  }).toString();
+}
+
+function auditQuery(filters: AuditFilters): string {
+  return new URLSearchParams({
+    q: filters.q,
+    actor: filters.actor,
+    role: filters.role,
+    action: filters.action,
+    entity_type: filters.entityType,
+    outcome: filters.outcome,
+    date_from: filters.dateFrom,
+    date_to: filters.dateTo,
+    sort: filters.sort,
+    page: String(filters.page),
+    limit: String(filters.limit),
+  }).toString();
 }
 
 export const httpApi: ApiClient = {
@@ -161,7 +291,151 @@ export const httpApi: ApiClient = {
       signal,
     });
   },
+  getPublicSystemStatus(signal) {
+    return request<PublicSystemStatus>('/status', { signal });
+  },
+  getPublicAccessPolicy(signal) {
+    return request<PublicAccessPolicy>('/system/public-policy', { signal });
+  },
+  getEditorDashboard(signal) {
+    return request<EditorDashboard>('/editor/dashboard', { signal });
+  },
+  getManagedDocuments(filters, signal) {
+    return request<ManagedDocumentsResponse>(
+      '/editor/documents?' + managedDocumentsQuery(filters),
+      { signal },
+    );
+  },
+  getManagedDocument(documentId, signal) {
+    return request<ManagedDocumentDetail>('/editor/documents/' + encodeURIComponent(documentId), {
+      signal,
+    });
+  },
+  updateDocumentMetadata(documentId, value: ManagedDocumentUpdate) {
+    return request<ManagedDocumentDetail>(
+      '/editor/documents/' + encodeURIComponent(documentId) + '/metadata',
+      { method: 'PATCH', body: JSON.stringify(value) },
+    );
+  },
+  hideDocument(documentId, reason) {
+    return request<ManagedDocumentDetail>(
+      '/editor/documents/' + encodeURIComponent(documentId) + '/hide',
+      { method: 'POST', body: JSON.stringify({ reason }) },
+    );
+  },
+  restoreDocument(documentId) {
+    return request<ManagedDocumentDetail>(
+      '/editor/documents/' + encodeURIComponent(documentId) + '/restore',
+      { method: 'POST' },
+    );
+  },
+  reindexDocument(documentId) {
+    return request<BackgroundJob>(
+      '/editor/documents/' + encodeURIComponent(documentId) + '/reindex',
+      { method: 'POST' },
+    );
+  },
+  bulkUpdateDocuments(value: BulkDocumentRequest) {
+    return request<BulkDocumentResult>('/editor/documents/bulk', {
+      method: 'POST',
+      body: JSON.stringify(value),
+    });
+  },
+  getEditorJobs(filters, signal) {
+    return request<JobsResponse>('/editor/jobs?' + jobsQuery(filters), { signal });
+  },
+  getAdminDashboard(signal) {
+    return request<AdminDashboard>('/admin/dashboard', { signal });
+  },
+  getAdminUsers(filters, signal) {
+    return request<AdminUsersResponse>('/admin/users?' + usersQuery(filters), { signal });
+  },
+  getAdminUser(userId, signal) {
+    return request<AdminUserDetail>('/admin/users/' + encodeURIComponent(userId), { signal });
+  },
+  updateUserRole(userId, value: ChangeRoleRequest) {
+    return request<AdminUser>('/admin/users/' + encodeURIComponent(userId) + '/role', {
+      method: 'PATCH',
+      body: JSON.stringify(value),
+    });
+  },
+  blockUser(userId, value: BlockUserRequest) {
+    return request<AdminUser>('/admin/users/' + encodeURIComponent(userId) + '/block', {
+      method: 'POST',
+      body: JSON.stringify(value),
+    });
+  },
+  unblockUser(userId) {
+    return request<AdminUser>('/admin/users/' + encodeURIComponent(userId) + '/unblock', {
+      method: 'POST',
+    });
+  },
+  getSources(filters, signal) {
+    return request<SourcesResponse>('/admin/sources?' + sourcesQuery(filters), { signal });
+  },
+  getSource(sourceId, signal) {
+    return request<Source>('/admin/sources/' + encodeURIComponent(sourceId), { signal });
+  },
+  updateSource(sourceId, value: SourceUpdateRequest) {
+    return request<Source>('/admin/sources/' + encodeURIComponent(sourceId), {
+      method: 'PATCH',
+      body: JSON.stringify(value),
+    });
+  },
+  testSourceConnection(sourceId) {
+    return request<SourceConnectionResult>(
+      '/admin/sources/' + encodeURIComponent(sourceId) + '/test',
+      { method: 'POST' },
+    );
+  },
+  startSourceSync(sourceId) {
+    return request<BackgroundJob>('/admin/sources/' + encodeURIComponent(sourceId) + '/sync', {
+      method: 'POST',
+    });
+  },
+  stopSourceSync(sourceId) {
+    return request<BackgroundJob>('/admin/sources/' + encodeURIComponent(sourceId) + '/stop', {
+      method: 'POST',
+    });
+  },
+  getAdminJobs(filters, signal) {
+    return request<JobsResponse>('/admin/jobs?' + jobsQuery(filters), { signal });
+  },
+  getAdminJob(jobId, signal) {
+    return request<BackgroundJob>('/admin/jobs/' + encodeURIComponent(jobId), { signal });
+  },
+  retryJob(jobId) {
+    return request<BackgroundJob>('/admin/jobs/' + encodeURIComponent(jobId) + '/retry', {
+      method: 'POST',
+    });
+  },
+  cancelJob(jobId) {
+    return request<BackgroundJob>('/admin/jobs/' + encodeURIComponent(jobId) + '/cancel', {
+      method: 'POST',
+    });
+  },
+  startFullReindex() {
+    return request<BackgroundJob>('/admin/jobs/full-reindex', { method: 'POST' });
+  },
+  getAuditEvents(filters, signal) {
+    return request<AuditEventsResponse>('/admin/audit?' + auditQuery(filters), { signal });
+  },
+  getAuditEvent(eventId, signal) {
+    return request<AuditEvent>('/admin/audit/' + encodeURIComponent(eventId), { signal });
+  },
   getSystemStatus(signal) {
-    return request<SystemStatus>('/status', { signal });
+    return request<SystemStatus>('/admin/system', { signal });
+  },
+  runSystemHealthCheck() {
+    return request<SystemStatus>('/admin/system/health-check', { method: 'POST' });
+  },
+  getSystemSettings(signal) {
+    return request<SystemSettings>('/admin/system/settings', { signal });
+  },
+  updateSystemSettings(value: SystemSettingsUpdate) {
+    return request<SystemSettings>('/admin/system/settings', {
+      method: 'PATCH',
+      body: JSON.stringify(value),
+    });
   },
 };

@@ -1,6 +1,13 @@
 import { ApiError } from '../api/ApiError';
 import type {
+  AccountStatus,
+  AdminUser,
+  AdminUserDetail,
+  AdminUserFilters,
+  AdminUsersResponse,
   AuthSession,
+  BlockUserRequest,
+  ChangeRoleRequest,
   Feedback,
   FeedbackRequest,
   HistoryFilters,
@@ -13,10 +20,14 @@ import type {
   SearchView,
   UpdateProfileRequest,
   User,
+  UserRole,
   UserPreferences,
   UserStats,
 } from '../types';
+import type { Permission } from '../types';
+import { hasPermission } from '../features/auth/permissions';
 import { emailPattern, isStrongPassword, normalizeEmail } from '../utils/validation';
+import { appendAudit, readAuditEvents } from './mockAudit';
 import {
   clearMockStorage,
   mockStorageKeys,
@@ -61,7 +72,66 @@ export const defaultUserPreferences: UserPreferences = {
 
 const demoUserId = 'user-demo-1';
 const demoEmail = 'user@pyanswer.local';
-const sessionVersion = 1;
+
+interface SeedAccount {
+  id: string;
+  email: string;
+  displayName: string;
+  role: UserRole;
+  accountStatus: AccountStatus;
+  createdAt: string;
+  lastActiveAt: string;
+}
+
+const seedAccounts: SeedAccount[] = [
+  {
+    id: demoUserId,
+    email: demoEmail,
+    displayName: 'Demo User',
+    role: 'USER',
+    accountStatus: 'ACTIVE',
+    createdAt: '2025-01-15T10:00:00.000Z',
+    lastActiveAt: '2026-07-15T08:40:00.000Z',
+  },
+  {
+    id: 'user-demo-editor',
+    email: 'editor@pyanswer.local',
+    displayName: 'Елена Редактор',
+    role: 'EDITOR',
+    accountStatus: 'ACTIVE',
+    createdAt: '2025-02-04T11:30:00.000Z',
+    lastActiveAt: '2026-07-15T08:32:00.000Z',
+  },
+  {
+    id: 'user-demo-admin',
+    email: 'admin@pyanswer.local',
+    displayName: 'Алексей Администратор',
+    role: 'ADMIN',
+    accountStatus: 'ACTIVE',
+    createdAt: '2025-01-03T09:00:00.000Z',
+    lastActiveAt: '2026-07-15T08:55:00.000Z',
+  },
+  ...[
+    ['user-seed-01', 'Анна Петрова', 'anna@pyanswer.local', 'USER', 'ACTIVE'],
+    ['user-seed-02', 'Максим Волков', 'maxim@pyanswer.local', 'USER', 'ACTIVE'],
+    ['user-seed-03', 'Дарья Орлова', 'daria@pyanswer.local', 'EDITOR', 'ACTIVE'],
+    ['user-seed-04', 'Илья Морозов', 'ilya@pyanswer.local', 'USER', 'BLOCKED'],
+    ['user-seed-05', 'Ольга Соколова', 'olga@pyanswer.local', 'USER', 'ACTIVE'],
+    ['user-seed-06', 'Никита Смирнов', 'nikita@pyanswer.local', 'EDITOR', 'BLOCKED'],
+    ['user-seed-07', 'Мария Лебедева', 'maria@pyanswer.local', 'USER', 'ACTIVE'],
+    ['user-seed-08', 'Павел Кузнецов', 'pavel@pyanswer.local', 'ADMIN', 'ACTIVE'],
+    ['user-seed-09', 'Вера Попова', 'vera@pyanswer.local', 'USER', 'BLOCKED'],
+    ['user-seed-10', 'Роман Новиков', 'roman@pyanswer.local', 'USER', 'ACTIVE'],
+  ].map(([id, displayName, email, role, accountStatus], index) => ({
+    id: id ?? '',
+    displayName: displayName ?? '',
+    email: email ?? '',
+    role: (role ?? 'USER') as UserRole,
+    accountStatus: (accountStatus ?? 'ACTIVE') as AccountStatus,
+    createdAt: new Date(Date.UTC(2025, 3 + (index % 8), 2 + index, 10)).toISOString(),
+    lastActiveAt: new Date(Date.UTC(2026, 6, 14 - (index % 7), 8 + (index % 5))).toISOString(),
+  })),
+];
 
 function now(): string {
   return new Date().toISOString();
@@ -89,40 +159,70 @@ function isPreferences(value: unknown): value is UserPreferences {
   );
 }
 
-function isUser(value: unknown): value is User {
-  return (
-    typeof value === 'object' &&
-    value !== null &&
-    'id' in value &&
-    typeof value.id === 'string' &&
-    'email' in value &&
-    typeof value.email === 'string' &&
-    'displayName' in value &&
-    typeof value.displayName === 'string' &&
-    'role' in value &&
-    ['USER', 'EDITOR', 'ADMIN'].includes(String(value.role)) &&
-    'accountStatus' in value &&
-    ['ACTIVE', 'BLOCKED'].includes(String(value.accountStatus)) &&
-    'createdAt' in value &&
-    typeof value.createdAt === 'string' &&
-    'lastActiveAt' in value &&
-    typeof value.lastActiveAt === 'string' &&
-    'preferences' in value &&
-    isPreferences(value.preferences)
-  );
+function toUser(value: unknown): User | null {
+  if (
+    typeof value !== 'object' ||
+    value === null ||
+    !('id' in value) ||
+    typeof value.id !== 'string' ||
+    !('email' in value) ||
+    typeof value.email !== 'string' ||
+    !('displayName' in value) ||
+    typeof value.displayName !== 'string' ||
+    !('createdAt' in value) ||
+    typeof value.createdAt !== 'string' ||
+    !('lastActiveAt' in value) ||
+    typeof value.lastActiveAt !== 'string'
+  ) {
+    return null;
+  }
+  const role =
+    'role' in value && ['USER', 'EDITOR', 'ADMIN'].includes(String(value.role))
+      ? (value.role as UserRole)
+      : 'USER';
+  const accountStatus =
+    'accountStatus' in value && ['ACTIVE', 'BLOCKED'].includes(String(value.accountStatus))
+      ? (value.accountStatus as AccountStatus)
+      : 'ACTIVE';
+  const preferences =
+    'preferences' in value && isPreferences(value.preferences)
+      ? value.preferences
+      : defaultUserPreferences;
+  const accountVersion =
+    'accountVersion' in value &&
+    typeof value.accountVersion === 'number' &&
+    Number.isInteger(value.accountVersion) &&
+    value.accountVersion > 0
+      ? value.accountVersion
+      : 1;
+
+  return {
+    id: value.id,
+    email: normalizeEmail(value.email),
+    displayName: value.displayName,
+    role,
+    accountStatus,
+    createdAt: value.createdAt,
+    lastActiveAt: value.lastActiveAt,
+    accountVersion,
+    preferences: { ...preferences },
+  };
 }
 
-function isCredential(value: unknown): value is MockCredentialRecord {
-  return (
-    typeof value === 'object' &&
-    value !== null &&
-    'user' in value &&
-    isUser(value.user) &&
-    'salt' in value &&
-    typeof value.salt === 'string' &&
-    'digest' in value &&
-    typeof value.digest === 'string'
-  );
+function toCredential(value: unknown): MockCredentialRecord | null {
+  if (
+    typeof value !== 'object' ||
+    value === null ||
+    !('user' in value) ||
+    !('salt' in value) ||
+    typeof value.salt !== 'string' ||
+    !('digest' in value) ||
+    typeof value.digest !== 'string'
+  ) {
+    return null;
+  }
+  const user = toUser(value.user);
+  return user ? { user, salt: value.salt, digest: value.digest } : null;
 }
 
 function isSavedRecord(value: unknown): value is MockSavedRecord {
@@ -211,7 +311,19 @@ function isFeedback(value: unknown): value is Feedback {
 
 function users(): MockCredentialRecord[] {
   prepareMockStorage();
-  return readArray(window.localStorage, mockStorageKeys.users, isCredential);
+  const value = readUnknown(window.localStorage, mockStorageKeys.users);
+  if (value === null) return [];
+  if (!Array.isArray(value)) {
+    window.localStorage.removeItem(mockStorageKeys.users);
+    return [];
+  }
+  const records = value
+    .map(toCredential)
+    .filter((record): record is MockCredentialRecord => Boolean(record));
+  if (records.length !== value.length || records.some((record, index) => record !== value[index])) {
+    saveUsers(records);
+  }
+  return records;
 }
 
 function saveUsers(records: MockCredentialRecord[]): void {
@@ -247,26 +359,82 @@ async function passwordDigest(password: string, salt: string): Promise<string> {
   return (hash >>> 0).toString(16).padStart(8, '0');
 }
 
-async function ensureDemoUser(): Promise<void> {
+async function ensureSeedUsers(): Promise<void> {
   const records = users();
-  if (records.some((record) => record.user.id === demoUserId)) return;
-  const createdAt = '2025-01-15T10:00:00.000Z';
-  const salt = createSalt();
-  records.push({
-    user: {
-      id: demoUserId,
-      email: demoEmail,
-      displayName: 'Demo User',
-      role: 'USER',
-      accountStatus: 'ACTIVE',
-      createdAt,
-      lastActiveAt: createdAt,
-      preferences: { ...defaultUserPreferences },
-    },
-    salt,
-    digest: await passwordDigest('Demo123!', salt),
+  let changed = false;
+  for (const seed of seedAccounts) {
+    if (
+      records.some(
+        (record) =>
+          record.user.id === seed.id ||
+          normalizeEmail(record.user.email) === normalizeEmail(seed.email),
+      )
+    ) {
+      continue;
+    }
+    const salt = createSalt();
+    records.push({
+      user: {
+        ...seed,
+        accountVersion: 1,
+        preferences: { ...defaultUserPreferences },
+      },
+      salt,
+      digest: await passwordDigest('Demo123!', salt),
+    });
+    changed = true;
+  }
+  if (changed) saveUsers(records);
+  seedSyntheticUserData();
+}
+
+function seedSyntheticUserData(): void {
+  seedAccounts.slice(3).forEach((account, index) => {
+    const historyKey = mockUserStorageKeys.history(account.id);
+    if (window.localStorage.getItem(historyKey) === null) {
+      const items: SearchHistoryItem[] = Array.from({ length: index % 5 }, (_, itemIndex) => ({
+        id: `history-seed-${index}-${itemIndex}`,
+        userId: account.id,
+        query:
+          ['asyncio task', 'pandas csv', 'FastAPI Depends', 'pytest fixture'][itemIndex % 4] ??
+          'python',
+        view: itemIndex % 2 === 0 ? 'documents' : 'answer',
+        mode: itemIndex % 3 === 0 ? 'hybrid' : itemIndex % 3 === 1 ? 'bm25' : 'vector',
+        filters: { tags: [], minScore: 0, acceptedOnly: false, hasCodeOnly: false },
+        sort: 'relevance',
+        pageSize: 10,
+        resultCount: 4 + itemIndex,
+        tookMs: 64 + itemIndex * 120,
+        createdAt: new Date(Date.UTC(2026, 6, 14 - itemIndex, 9, index)).toISOString(),
+        answerPreview:
+          itemIndex % 2
+            ? 'Синтетический preview ответа для административной статистики.'
+            : undefined,
+      }));
+      writeJson(window.localStorage, historyKey, items);
+    }
+    const savedKey = mockUserStorageKeys.saved(account.id);
+    if (window.localStorage.getItem(savedKey) === null) {
+      const items: MockSavedRecord[] = Array.from({ length: index % 4 }, (_, itemIndex) => ({
+        documentId: `py-${String(1001 + itemIndex).padStart(4, '0')}`,
+        savedAt: new Date(Date.UTC(2026, 6, 10 + itemIndex, 12)).toISOString(),
+      }));
+      writeJson(window.localStorage, savedKey, items);
+    }
+    const feedbackKey = mockUserStorageKeys.feedback(account.id);
+    if (window.localStorage.getItem(feedbackKey) === null) {
+      const items: Feedback[] = Array.from({ length: index % 3 }, (_, itemIndex) => ({
+        id: `feedback-seed-${index}-${itemIndex}`,
+        userId: account.id,
+        responseId: `rag-seed-${index}-${itemIndex}`,
+        value: itemIndex % 2 === 0 ? 'positive' : 'negative',
+        question: 'Синтетический вопрос',
+        createdAt: new Date(Date.UTC(2026, 6, 12, 10, itemIndex)).toISOString(),
+        updatedAt: new Date(Date.UTC(2026, 6, 12, 10, itemIndex)).toISOString(),
+      }));
+      writeJson(window.localStorage, feedbackKey, items);
+    }
   });
-  saveUsers(records);
 }
 
 function isSession(value: unknown): value is AuthSession {
@@ -278,7 +446,7 @@ function isSession(value: unknown): value is AuthSession {
     'expiresAt' in value &&
     typeof value.expiresAt === 'string' &&
     'mockSessionVersion' in value &&
-    value.mockSessionVersion === sessionVersion
+    typeof value.mockSessionVersion === 'number'
   );
 }
 
@@ -296,20 +464,47 @@ function currentSession(): AuthSession | null {
   return readSessionFrom(window.sessionStorage) ?? readSessionFrom(window.localStorage);
 }
 
-function requireUserId(): string {
+function activeRecord(): MockCredentialRecord | null {
   const session = currentSession();
-  if (!session) throw new ApiError('Для этого действия необходимо войти.', 401);
-  return session.userId;
+  if (!session) return null;
+  const record = users().find((item) => item.user.id === session.userId);
+  if (
+    !record ||
+    record.user.accountStatus !== 'ACTIVE' ||
+    record.user.accountVersion !== session.mockSessionVersion
+  ) {
+    logout();
+    return null;
+  }
+  return record;
 }
 
-function createSession(userId: string, remember: boolean): void {
+function requireUser(): User {
+  const record = activeRecord();
+  if (!record) throw new ApiError('Для этого действия необходимо войти.', 401, 'UNAUTHORIZED');
+  return record.user;
+}
+
+function requireUserId(): string {
+  return requireUser().id;
+}
+
+function requirePermission(permission: Permission): User {
+  const user = requireUser();
+  if (!hasPermission(user, permission)) {
+    throw new ApiError('Недостаточно прав для выполнения действия.', 403, 'FORBIDDEN');
+  }
+  return user;
+}
+
+function createSession(user: User, remember: boolean): void {
   window.localStorage.removeItem(mockStorageKeys.session);
   window.sessionStorage.removeItem(mockStorageKeys.session);
   const expiresInMs = remember ? 30 * 24 * 60 * 60 * 1000 : 12 * 60 * 60 * 1000;
   const session: AuthSession = {
-    userId,
+    userId: user.id,
     expiresAt: new Date(Date.now() + expiresInMs).toISOString(),
-    mockSessionVersion: sessionVersion,
+    mockSessionVersion: user.accountVersion,
   };
   writeJson(
     remember ? window.localStorage : window.sessionStorage,
@@ -327,7 +522,7 @@ function touchUser(record: MockCredentialRecord, records: MockCredentialRecord[]
 }
 
 async function register(request: RegisterRequest): Promise<User> {
-  await ensureDemoUser();
+  await ensureSeedUsers();
   const email = normalizeEmail(request.email);
   const displayName = request.displayName.trim();
   if (displayName.length < 2) throw new ApiError('Имя должно содержать минимум 2 символа.', 422);
@@ -349,11 +544,21 @@ async function register(request: RegisterRequest): Promise<User> {
     accountStatus: 'ACTIVE',
     createdAt,
     lastActiveAt: createdAt,
+    accountVersion: 1,
     preferences: { ...defaultUserPreferences },
   };
   records.push({ user, salt, digest: await passwordDigest(request.password, salt) });
   saveUsers(records);
-  createSession(user.id, request.remember);
+  createSession(user, request.remember);
+  appendAudit({
+    actor: user,
+    action: 'REGISTER',
+    entityType: 'USER',
+    entityId: user.id,
+    entityLabel: user.email,
+    summary: 'Создана пользовательская учётная запись',
+    after: { role: user.role, accountStatus: user.accountStatus },
+  });
   return user;
 }
 
@@ -362,7 +567,7 @@ async function login(request: {
   password: string;
   remember: boolean;
 }): Promise<User> {
-  await ensureDemoUser();
+  await ensureSeedUsers();
   const records = users();
   const record = records.find(
     (item) => normalizeEmail(item.user.email) === normalizeEmail(request.email),
@@ -373,27 +578,44 @@ async function login(request: {
   if (record.user.accountStatus === 'BLOCKED') {
     throw new ApiError('Учётная запись заблокирована.', 403);
   }
-  createSession(record.user.id, request.remember);
-  return touchUser(record, records);
+  const user = touchUser(record, records);
+  createSession(user, request.remember);
+  appendAudit({
+    actor: user,
+    action: 'LOGIN',
+    entityType: 'AUTH',
+    entityId: user.id,
+    entityLabel: user.email,
+    summary: 'Выполнен вход в демонстрационную сессию',
+  });
+  return user;
 }
 
 async function getCurrentUser(): Promise<User | null> {
-  await ensureDemoUser();
-  const session = currentSession();
-  if (!session) return null;
+  await ensureSeedUsers();
+  const record = activeRecord();
+  if (!record) return null;
   const records = users();
-  const record = records.find((item) => item.user.id === session.userId);
-  if (!record) {
-    logout();
-    return null;
-  }
-  return touchUser(record, records);
+  const stored = records.find((item) => item.user.id === record.user.id);
+  return stored ? touchUser(stored, records) : null;
 }
 
 function logout(): void {
   prepareMockStorage();
+  const session = readSessionFrom(window.sessionStorage) ?? readSessionFrom(window.localStorage);
+  const actor = session ? users().find((item) => item.user.id === session.userId)?.user : undefined;
   window.localStorage.removeItem(mockStorageKeys.session);
   window.sessionStorage.removeItem(mockStorageKeys.session);
+  if (actor) {
+    appendAudit({
+      actor,
+      action: 'LOGOUT',
+      entityType: 'AUTH',
+      entityId: actor.id,
+      entityLabel: actor.email,
+      summary: 'Завершена демонстрационная сессия',
+    });
+  }
 }
 
 function updateCurrentUser(request: UpdateProfileRequest): User {
@@ -420,6 +642,16 @@ function updateCurrentUser(request: UpdateProfileRequest): User {
   };
   records[index] = { ...record, user };
   saveUsers(records);
+  appendAudit({
+    actor: user,
+    action: 'UPDATE_PROFILE',
+    entityType: 'USER',
+    entityId: user.id,
+    entityLabel: user.email,
+    summary: 'Обновлён пользовательский профиль',
+    before: { displayName: record.user.displayName, email: record.user.email },
+    after: { displayName: user.displayName, email: user.email },
+  });
   return user;
 }
 
@@ -463,6 +695,11 @@ function historyRecords(userId: string): SearchHistoryItem[] {
   return readArray(window.localStorage, mockUserStorageKeys.history(userId), isHistoryItem).filter(
     (item) => item.userId === userId,
   );
+}
+
+function getHistoryForAdmin(userId: string): SearchHistoryItem[] {
+  requirePermission('USERS_MANAGE');
+  return historyRecords(userId);
 }
 
 function historyFingerprint(value: HistoryRecordInput | SearchHistoryItem): string {
@@ -590,7 +827,190 @@ function getUserStats(): UserStats {
   };
 }
 
+function statsForUser(userId: string): UserStats {
+  const history = historyRecords(userId);
+  return {
+    documentSearches: history.filter((item) => item.view === 'documents').length,
+    ragSearches: history.filter((item) => item.view === 'answer').length,
+    savedDocuments: savedRecords(userId).length,
+    ratedAnswers: feedbackRecords(userId).length,
+  };
+}
+
+function toAdminUser(record: MockCredentialRecord): AdminUser {
+  return { ...record.user, stats: statsForUser(record.user.id) };
+}
+
+function getAdminUsers(filters: AdminUserFilters): AdminUsersResponse {
+  requirePermission('USERS_MANAGE');
+  const search = filters.q.trim().toLocaleLowerCase('ru-RU');
+  const filtered = users()
+    .map(toAdminUser)
+    .filter(
+      (user) =>
+        !search ||
+        user.displayName.toLocaleLowerCase('ru-RU').includes(search) ||
+        user.email.toLocaleLowerCase('ru-RU').includes(search),
+    )
+    .filter((user) => filters.role === 'ALL' || user.role === filters.role)
+    .filter((user) => filters.status === 'ALL' || user.accountStatus === filters.status)
+    .filter((user) => !filters.registeredFrom || user.createdAt >= filters.registeredFrom)
+    .filter((user) => !filters.registeredTo || user.createdAt <= filters.registeredTo)
+    .sort((left, right) => {
+      if (filters.sort === 'created_asc') return left.createdAt.localeCompare(right.createdAt);
+      if (filters.sort === 'activity_desc') {
+        return right.lastActiveAt.localeCompare(left.lastActiveAt);
+      }
+      if (filters.sort === 'name_asc')
+        return left.displayName.localeCompare(right.displayName, 'ru');
+      return right.createdAt.localeCompare(left.createdAt);
+    });
+  const total = filtered.length;
+  const totalPages = Math.max(1, Math.ceil(total / filters.limit));
+  const offset = (filters.page - 1) * filters.limit;
+  return {
+    items: filtered.slice(offset, offset + filters.limit),
+    pagination: { page: filters.page, pageSize: filters.limit, total, totalPages },
+  };
+}
+
+function getAdminUser(userId: string): AdminUserDetail {
+  requirePermission('USERS_MANAGE');
+  const record = users().find((item) => item.user.id === userId);
+  if (!record) throw new ApiError('Пользователь не найден.', 404, 'NOT_FOUND');
+  return {
+    ...toAdminUser(record),
+    recentHistory: historyRecords(userId)
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+      .slice(0, 5),
+    recentAuditEvents: readAuditEvents()
+      .filter((event) => event.entityType === 'USER' && event.entityId === userId)
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+      .slice(0, 8),
+  };
+}
+
+function activeAdminCount(records: MockCredentialRecord[]): number {
+  return records.filter(
+    (record) => record.user.role === 'ADMIN' && record.user.accountStatus === 'ACTIVE',
+  ).length;
+}
+
+function updateUserRole(userId: string, request: ChangeRoleRequest): AdminUser {
+  const actor = requirePermission('USERS_MANAGE');
+  if (!['USER', 'EDITOR', 'ADMIN'].includes(request.role)) {
+    throw new ApiError('Неизвестная роль.', 422, 'VALIDATION_ERROR');
+  }
+  const records = users();
+  const index = records.findIndex((record) => record.user.id === userId);
+  const record = records[index];
+  if (!record) throw new ApiError('Пользователь не найден.', 404, 'NOT_FOUND');
+  if (
+    record.user.role === 'ADMIN' &&
+    record.user.accountStatus === 'ACTIVE' &&
+    request.role !== 'ADMIN' &&
+    activeAdminCount(records) <= 1
+  ) {
+    throw new ApiError('В системе должен оставаться активный администратор.', 409, 'CONFLICT');
+  }
+  if (actor.id === userId) {
+    throw new ApiError('Нельзя изменить собственную роль.', 409, 'CONFLICT');
+  }
+  if (record.user.role === request.role) return toAdminUser(record);
+  const updated: User = {
+    ...record.user,
+    role: request.role,
+    accountVersion: record.user.accountVersion + 1,
+    lastActiveAt: now(),
+  };
+  records[index] = { ...record, user: updated };
+  saveUsers(records);
+  appendAudit({
+    actor,
+    action: 'CHANGE_USER_ROLE',
+    entityType: 'USER',
+    entityId: updated.id,
+    entityLabel: updated.email,
+    summary: `Роль изменена: ${record.user.role} → ${updated.role}`,
+    before: { role: record.user.role, accountVersion: record.user.accountVersion },
+    after: { role: updated.role, accountVersion: updated.accountVersion },
+  });
+  return toAdminUser(records[index]);
+}
+
+function blockUser(userId: string, request: BlockUserRequest): AdminUser {
+  const actor = requirePermission('USERS_MANAGE');
+  const reason = request.reason.trim();
+  if (reason.length < 3) {
+    throw new ApiError('Укажите причину блокировки.', 422, 'VALIDATION_ERROR');
+  }
+  const records = users();
+  const index = records.findIndex((record) => record.user.id === userId);
+  const record = records[index];
+  if (!record) throw new ApiError('Пользователь не найден.', 404, 'NOT_FOUND');
+  if (record.user.accountStatus === 'BLOCKED') return toAdminUser(record);
+  if (record.user.role === 'ADMIN' && activeAdminCount(records) <= 1) {
+    throw new ApiError(
+      'Нельзя заблокировать последнего активного администратора.',
+      409,
+      'CONFLICT',
+    );
+  }
+  if (actor.id === userId) throw new ApiError('Нельзя заблокировать себя.', 409, 'CONFLICT');
+  const updated: User = {
+    ...record.user,
+    accountStatus: 'BLOCKED',
+    accountVersion: record.user.accountVersion + 1,
+  };
+  records[index] = { ...record, user: updated };
+  saveUsers(records);
+  appendAudit({
+    actor,
+    action: 'BLOCK_USER',
+    entityType: 'USER',
+    entityId: updated.id,
+    entityLabel: updated.email,
+    summary: 'Учётная запись заблокирована',
+    before: { accountStatus: record.user.accountStatus },
+    after: { accountStatus: updated.accountStatus },
+    metadata: { reason: reason.slice(0, 300) },
+  });
+  return toAdminUser(records[index]);
+}
+
+function unblockUser(userId: string): AdminUser {
+  const actor = requirePermission('USERS_MANAGE');
+  const records = users();
+  const index = records.findIndex((record) => record.user.id === userId);
+  const record = records[index];
+  if (!record) throw new ApiError('Пользователь не найден.', 404, 'NOT_FOUND');
+  if (record.user.accountStatus === 'ACTIVE') return toAdminUser(record);
+  const updated: User = {
+    ...record.user,
+    accountStatus: 'ACTIVE',
+    accountVersion: record.user.accountVersion + 1,
+  };
+  records[index] = { ...record, user: updated };
+  saveUsers(records);
+  appendAudit({
+    actor,
+    action: 'UNBLOCK_USER',
+    entityType: 'USER',
+    entityId: updated.id,
+    entityLabel: updated.email,
+    summary: 'Учётная запись разблокирована',
+    before: { accountStatus: record.user.accountStatus },
+    after: { accountStatus: updated.accountStatus },
+  });
+  return toAdminUser(records[index]);
+}
+
+async function initialize(): Promise<void> {
+  await ensureSeedUsers();
+}
+
 export const mockRepository = {
+  initialize,
   register,
   login,
   logout,
@@ -608,5 +1028,14 @@ export const mockRepository = {
   sendFeedback,
   deleteFeedback,
   getFeedbackForResponse,
+  getAdminUsers,
+  getAdminUser,
+  getHistoryForAdmin,
+  updateUserRole,
+  blockUser,
+  unblockUser,
+  getActor: requireUser,
+  getOptionalActor: () => activeRecord()?.user ?? null,
+  requirePermission,
   reset: clearMockStorage,
 };

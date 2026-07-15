@@ -1,4 +1,4 @@
-import type { Document, SystemStatus, Tag } from '../types';
+import type { Document, PublicSystemStatus, Tag } from '../types';
 
 interface DocumentSeed {
   title: string;
@@ -302,8 +302,8 @@ function makeDocument(seed: DocumentSeed, index: number): Document {
     answers,
     chunkCount: 3 + (index % 8),
     indexedAt: new Date(Date.UTC(2026, 6, 15, 14, index % 50)).toISOString(),
-    bm25Status: 'ready',
-    vectorStatus: 'ready',
+    bm25Status: 'READY',
+    vectorStatus: 'READY',
     contentHash: 'sha256:' + (104_729 * (index + 17)).toString(16).padStart(12, '0'),
     saved: false,
     scores: {
@@ -317,7 +317,7 @@ function makeDocument(seed: DocumentSeed, index: number): Document {
 
 export const mockDocuments: Document[] = seeds.map(makeDocument);
 
-export const mockSystemStatus: SystemStatus = {
+export const mockSystemStatus: PublicSystemStatus = {
   services: [
     { name: 'API', state: 'online', latencyMs: 18 },
     { name: 'PostgreSQL', state: 'online', latencyMs: 7 },

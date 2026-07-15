@@ -16,6 +16,19 @@ describe('clearUserQueryCache', () => {
     expect(queryClient.getQueryData(queryKeys.system.status)).toEqual({ online: true });
   });
 
+  it('удаляет role-sensitive editor и admin cache при logout', () => {
+    const queryClient = new QueryClient();
+    queryClient.setQueryData(queryKeys.editor.dashboard, { documents: 20 });
+    queryClient.setQueryData(queryKeys.admin.dashboard, { users: 13 });
+    queryClient.setQueryData(queryKeys.system.status, { online: true });
+
+    clearUserQueryCache(queryClient);
+
+    expect(queryClient.getQueryData(queryKeys.editor.dashboard)).toBeUndefined();
+    expect(queryClient.getQueryData(queryKeys.admin.dashboard)).toBeUndefined();
+    expect(queryClient.getQueryData(queryKeys.system.status)).toEqual({ online: true });
+  });
+
   it('синхронно обновляет saved-флаг в поисковом cache без повторного запроса', () => {
     const queryClient = new QueryClient();
     const response: SearchResponse = {

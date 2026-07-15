@@ -10,10 +10,14 @@ import {
   Sun,
   UserPlus,
   UserRound,
+  Gauge,
+  ShieldCheck,
 } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { useAuth } from '../../features/auth/useAuth';
+import { usePermissions } from '../../features/auth/usePermissions';
+import { roleLabels } from '../../features/auth/permissions';
 import { useTheme } from '../../store/useTheme';
 import { cn } from '../../utils/cn';
 import { Button } from '../ui/Button';
@@ -34,14 +38,15 @@ const userLinks = [
 export function Sidebar({ filters, onNavigate, className }: SidebarProps) {
   const { theme, toggleTheme } = useTheme();
   const { user, logout } = useAuth();
+  const { can } = usePermissions();
   const navigate = useNavigate();
   const location = useLocation();
 
   const signOut = async () => {
     try {
+      navigate('/', { replace: true });
       await logout();
       toast.success('Вы вышли из аккаунта');
-      navigate('/');
       onNavigate?.();
     } catch {
       toast.error('Не удалось завершить сессию');
@@ -98,6 +103,26 @@ export function Sidebar({ filters, onNavigate, className }: SidebarProps) {
                 </Link>
               );
             })}
+            {can('EDITOR_ACCESS') ? (
+              <Link
+                to="/editor"
+                onClick={onNavigate}
+                className="flex h-9 items-center gap-2.5 rounded-lg px-3 text-sm text-muted transition hover:bg-elevated/60 hover:text-ink"
+              >
+                <Gauge className="size-4 text-info" aria-hidden="true" />
+                Панель редактора
+              </Link>
+            ) : null}
+            {can('ADMIN_ACCESS') ? (
+              <Link
+                to="/admin"
+                onClick={onNavigate}
+                className="flex h-9 items-center gap-2.5 rounded-lg px-3 text-sm text-muted transition hover:bg-elevated/60 hover:text-ink"
+              >
+                <ShieldCheck className="size-4 text-info" aria-hidden="true" />
+                Администрирование
+              </Link>
+            ) : null}
           </nav>
         ) : (
           <div className="mt-4 grid grid-cols-2 gap-2">
@@ -162,7 +187,7 @@ export function Sidebar({ filters, onNavigate, className }: SidebarProps) {
               </Button>
             </div>
             <p className="mt-2 border-t border-line pt-2 font-mono text-[10px] text-success">
-              Пользователь · ACTIVE
+              {roleLabels[user.role]} · ACTIVE
             </p>
           </div>
         ) : null}

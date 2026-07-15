@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { FileSearch, SlidersHorizontal } from 'lucide-react';
-import { useSearchParams } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api';
 import { queryKeys } from '../api/queryKeys';
 import type { AskResponse, SearchFilters, SearchMode, SearchView } from '../types';
@@ -23,10 +23,13 @@ import { ResultCard } from '../features/search/ResultCard';
 import { SearchModeControl } from '../features/search/SearchModeControl';
 import { RagAnswer } from '../features/rag/RagAnswer';
 import { useAuth } from '../features/auth/useAuth';
+import { loginUrl } from '../utils/returnTo';
 
 export function SearchPage() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const { user } = useAuth();
+  const { user, status } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
   const request = useMemo(
     () => parseSearchRequest(searchParams, user?.preferences),
     [searchParams, user?.preferences],
@@ -44,6 +47,27 @@ export function SearchPage() {
     queryFn: ({ signal }) => api.searchDocuments(request, signal),
     enabled: request.view === 'documents' && request.q.length > 0,
   });
+  const publicPolicy = useQuery({
+    queryKey: queryKeys.system.publicPolicy,
+    queryFn: ({ signal }) => api.getPublicAccessPolicy(signal),
+    staleTime: 30_000,
+  });
+
+  useEffect(() => {
+    if (status !== 'anonymous' || !request.q || !publicPolicy.data) return;
+    const denied =
+      (request.view === 'documents' && !publicPolicy.data.allowGuestSearch) ||
+      (request.view === 'answer' && !publicPolicy.data.allowGuestRag);
+    if (denied) navigate(loginUrl(location.pathname + location.search), { replace: true });
+  }, [
+    location.pathname,
+    location.search,
+    navigate,
+    publicPolicy.data,
+    request.q,
+    request.view,
+    status,
+  ]);
 
   useEffect(() => {
     if (!user || !documentsQuery.data || request.page !== 1) return;

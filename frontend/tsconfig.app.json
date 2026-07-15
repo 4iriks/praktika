@@ -18,7 +18,7 @@
     "jsx": "react-jsx",
     "noUncheckedIndexedAccess": true,
     "noImplicitOverride": true,
-    "types": ["vitest/globals", "@testing-library/jest-dom"]
+    "types": ["vitest/globals", "@testing-library/jest-dom", "react-syntax-highlighter"]
   },
   "include": ["src"]
 }

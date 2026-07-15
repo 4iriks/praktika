@@ -1,5 +1,5 @@
-import { useEffect } from 'react';
 import { AlertTriangle } from 'lucide-react';
+import { useDialogFocus } from '../../hooks/useDialogFocus';
 import { Button } from './Button';
 
 interface ConfirmDialogProps {
@@ -19,14 +19,7 @@ export function ConfirmDialog({
   onConfirm,
   onClose,
 }: ConfirmDialogProps) {
-  useEffect(() => {
-    if (!open) return;
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', closeOnEscape);
-    return () => window.removeEventListener('keydown', closeOnEscape);
-  }, [onClose, open]);
+  const dialogRef = useDialogFocus<HTMLDivElement>(open, onClose);
 
   if (!open) return null;
 
@@ -39,6 +32,7 @@ export function ConfirmDialog({
         aria-label="Закрыть диалог"
       />
       <div
+        ref={dialogRef}
         className="panel relative z-10 w-full max-w-md p-5"
         role="alertdialog"
         aria-modal="true"
@@ -55,7 +49,7 @@ export function ConfirmDialog({
           {description}
         </p>
         <div className="mt-5 flex justify-end gap-2">
-          <Button type="button" variant="ghost" onClick={onClose}>
+          <Button type="button" variant="ghost" onClick={onClose} data-autofocus>
             Отмена
           </Button>
           <Button

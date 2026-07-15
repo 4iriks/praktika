@@ -1,10 +1,22 @@
-import { Bookmark, Clock3, LogIn, LogOut, UserPlus, UserRound } from 'lucide-react';
+import {
+  Bookmark,
+  Clock3,
+  Gauge,
+  LogIn,
+  LogOut,
+  ShieldCheck,
+  UserPlus,
+  UserRound,
+} from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { useAuth } from '../../features/auth/useAuth';
+import { usePermissions } from '../../features/auth/usePermissions';
+import { roleLabels } from '../../features/auth/permissions';
 
 export function UserMenu() {
   const { user, logout } = useAuth();
+  const { can } = usePermissions();
   const navigate = useNavigate();
 
   if (!user) {
@@ -31,9 +43,9 @@ export function UserMenu() {
 
   const signOut = async () => {
     try {
+      navigate('/', { replace: true });
       await logout();
       toast.success('Вы вышли из аккаунта');
-      navigate('/');
     } catch {
       toast.error('Не удалось завершить сессию');
     }
@@ -51,7 +63,7 @@ export function UserMenu() {
         <div className="border-b border-line px-2 pb-2">
           <p className="truncate text-xs font-medium text-ink">{user.displayName}</p>
           <p className="mt-0.5 truncate text-[11px] text-muted">{user.email}</p>
-          <p className="mt-1 font-mono text-[10px] text-success">Пользователь</p>
+          <p className="mt-1 font-mono text-[10px] text-success">{roleLabels[user.role]}</p>
         </div>
         <nav className="py-1">
           <MenuLink to="/profile" icon={UserRound}>
@@ -63,6 +75,16 @@ export function UserMenu() {
           <MenuLink to="/saved" icon={Bookmark}>
             Сохранённые
           </MenuLink>
+          {can('EDITOR_ACCESS') ? (
+            <MenuLink to="/editor" icon={Gauge}>
+              Панель редактора
+            </MenuLink>
+          ) : null}
+          {can('ADMIN_ACCESS') ? (
+            <MenuLink to="/admin" icon={ShieldCheck}>
+              Панель администратора
+            </MenuLink>
+          ) : null}
         </nav>
         <button
           type="button"
@@ -89,6 +111,7 @@ function MenuLink({
   return (
     <Link
       to={to}
+      onClick={(event) => event.currentTarget.closest('details')?.removeAttribute('open')}
       className="flex h-8 items-center gap-2 rounded-md px-2 text-xs text-muted transition hover:bg-elevated hover:text-ink"
     >
       <Icon className="size-3.5" aria-hidden="true" />

@@ -1,4 +1,13 @@
-import type { HistoryFilters, RagResponseId, SavedDocumentsFilters } from '../types';
+import type {
+  AdminUserFilters,
+  AuditFilters,
+  HistoryFilters,
+  JobFilters,
+  ManagedDocumentFilters,
+  RagResponseId,
+  SavedDocumentsFilters,
+  SourceFilters,
+} from '../types';
 
 export const queryKeys = {
   auth: {
@@ -30,5 +39,27 @@ export const queryKeys = {
   },
   system: {
     status: ['system-status'] as const,
+    publicPolicy: ['public-policy'] as const,
+  },
+  editor: {
+    root: ['editor'] as const,
+    dashboard: ['editor', 'dashboard'] as const,
+    documents: (filters: ManagedDocumentFilters) => ['editor', 'documents', filters] as const,
+    document: (documentId: string) => ['editor', 'document', documentId] as const,
+    jobs: (filters: JobFilters) => ['editor', 'jobs', filters] as const,
+  },
+  admin: {
+    root: ['admin'] as const,
+    dashboard: ['admin', 'dashboard'] as const,
+    users: (filters: AdminUserFilters) => ['admin', 'users', filters] as const,
+    user: (userId: string) => ['admin', 'user', userId] as const,
+    sources: (filters: SourceFilters) => ['admin', 'sources', filters] as const,
+    source: (sourceId: string) => ['admin', 'source', sourceId] as const,
+    jobs: (filters: JobFilters) => ['admin', 'jobs', filters] as const,
+    job: (jobId: string) => ['admin', 'job', jobId] as const,
+    audit: (filters: AuditFilters) => ['admin', 'audit', filters] as const,
+    auditEvent: (eventId: string) => ['admin', 'audit-event', eventId] as const,
+    systemStatus: ['admin', 'system-status'] as const,
+    systemSettings: ['admin', 'system-settings'] as const,
   },
 };

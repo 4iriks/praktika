@@ -7,6 +7,7 @@ import { DocumentThread } from '../features/documents/DocumentThread';
 import { Button } from '../components/ui/Button';
 import { Logo } from '../components/ui/Logo';
 import { ErrorState, ResultsSkeleton } from '../components/ui/QueryStates';
+import { ApiError } from '../api/ApiError';
 
 export function DocumentPage() {
   const { documentId = '' } = useParams();
@@ -43,7 +44,25 @@ export function DocumentPage() {
         {query.isLoading ? (
           <ResultsSkeleton />
         ) : query.isError ? (
-          <ErrorState onRetry={() => void query.refetch()} />
+          query.error instanceof ApiError &&
+          query.error.details?.reason === 'DOCUMENT_UNAVAILABLE' ? (
+            <section className="panel p-8 text-center">
+              <p className="font-mono text-xs text-warning">DOCUMENT_UNAVAILABLE</p>
+              <h1 className="mt-3 text-xl font-semibold">Документ временно недоступен</h1>
+              <p className="mt-2 text-sm text-muted">
+                Материал скрыт редактором или ожидает повторной индексации. Содержимое не
+                раскрывается.
+              </p>
+              <Link
+                to="/search"
+                className="mt-5 inline-flex h-10 items-center rounded-lg border border-line px-4 text-sm text-info"
+              >
+                Вернуться к поиску
+              </Link>
+            </section>
+          ) : (
+            <ErrorState onRetry={() => void query.refetch()} />
+          )
         ) : query.data ? (
           <DocumentThread document={query.data} />
         ) : null}

@@ -181,19 +181,29 @@ export function LoginPage() {
           </form>
           {useMocks ? (
             <div className="border-t border-line bg-elevated/20 px-6 py-4">
-              <p className="technical-label">Mock-аккаунт</p>
-              <button
-                type="button"
-                disabled={submitting}
-                onClick={() => {
-                  setEmail('user@pyanswer.local');
-                  setPassword('Demo123!');
-                  setErrors({});
-                }}
-                className="mt-2 w-full rounded-lg border border-line bg-surface px-3 py-2.5 text-left font-mono text-xs text-muted transition hover:border-accent/45 hover:text-ink disabled:opacity-50"
-              >
-                user@pyanswer.local · Demo123!
-              </button>
+              <p className="technical-label">Mock-аккаунты ролей</p>
+              <div className="mt-2 space-y-2">
+                {[
+                  ['USER', 'user@pyanswer.local'],
+                  ['EDITOR', 'editor@pyanswer.local'],
+                  ['ADMIN', 'admin@pyanswer.local'],
+                ].map(([role, accountEmail]) => (
+                  <button
+                    key={accountEmail}
+                    type="button"
+                    disabled={submitting}
+                    onClick={() => {
+                      setEmail(accountEmail ?? '');
+                      setPassword('Demo123!');
+                      setErrors({});
+                    }}
+                    className="w-full rounded-lg border border-line bg-surface px-3 py-2.5 text-left font-mono text-xs text-muted transition hover:border-accent/45 hover:text-ink disabled:opacity-50"
+                  >
+                    <span className="mr-2 text-info">{role}</span>
+                    {accountEmail} · Demo123!
+                  </button>
+                ))}
+              </div>
             </div>
           ) : null}
         </section>

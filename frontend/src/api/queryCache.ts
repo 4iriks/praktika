@@ -2,7 +2,16 @@ import type { QueryClient } from '@tanstack/react-query';
 import type { Document, SearchResponse } from '../types';
 import { queryKeys } from './queryKeys';
 
-const userScopedRoots = new Set(['user', 'history', 'saved', 'feedback', 'search', 'document']);
+const userScopedRoots = new Set([
+  'user',
+  'history',
+  'saved',
+  'feedback',
+  'search',
+  'document',
+  'editor',
+  'admin',
+]);
 
 export function clearUserQueryCache(queryClient: QueryClient): void {
   queryClient.removeQueries({

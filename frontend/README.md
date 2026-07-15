@@ -1,26 +1,28 @@
 # PyAnswer frontend
 
 PyAnswer — локальная интеллектуальная поисковая система по синтетической русскоязычной базе
-вопросов и ответов о Python. Frontend реализует законченный пользовательский контур:
+вопросов и ответов о Python. Текущий frontend объединяет три законченных контура:
 
-`регистрация → вход → поиск или RAG → история → сохранённые документы → профиль → feedback`.
+- пользовательский: регистрация → вход → поиск/RAG → история → saved → feedback → профиль;
+- редакторский: документы → metadata/moderation → reindex → jobs;
+- административный: users → sources → jobs → audit → system/settings.
 
-Этап 2 работает без backend, PostgreSQL, Qdrant и настоящего Ollama. Поиск, RAG и
-пользовательские операции обслуживает типизированный mock-адаптер. Существующий сценарий Этапа 1
-«главная → поиск или RAG → документ» сохранён.
+Этап 3 остаётся полностью frontend/mock-реализацией. В репозитории нет FastAPI, PostgreSQL,
+Qdrant, Ollama, crawler или настоящего indexer. Все management-операции проходят через единый
+типизированный API adapter и реально изменяют server-like mock repository.
 
 ## Стек
 
-- React 18 и TypeScript в strict-режиме;
-- Vite, React Router и TanStack Query;
-- Tailwind CSS, Lucide React и Sonner;
+- React 18, TypeScript strict, Vite и React Router;
+- TanStack Query для server-like состояния и точечной invalidation;
+- Tailwind CSS, Lucide React, Sonner и Recharts;
 - React Markdown, remark-gfm и react-syntax-highlighter;
 - Vitest, Testing Library, ESLint и Prettier;
 - production multi-stage Docker image с nginx.
 
 Требуются Node.js 18+ и npm 9+.
 
-## Локальный запуск
+## Запуск и проверки
 
 ```bash
 cd frontend
@@ -29,9 +31,7 @@ npm install
 npm run dev
 ```
 
-Vite запускает приложение по адресу `http://localhost:5173`.
-
-Полная проверка:
+Vite запускает приложение на `http://localhost:5173`.
 
 ```bash
 npm run typecheck
@@ -41,205 +41,259 @@ npm run build
 npm run format:check
 ```
 
+## Демонстрация ролей
+
+При `VITE_USE_MOCKS=true` seed идемпотентно создаёт три аккаунта:
+
+| Роль   | Email                 | Пароль   |
+| ------ | --------------------- | -------- |
+| USER   | user@pyanswer.local   | Demo123! |
+| EDITOR | editor@pyanswer.local | Demo123! |
+| ADMIN  | admin@pyanswer.local  | Demo123! |
+
+Дополнительно создаются 10 синтетических пользователей с разными ролями, статусами, датами и
+персональной статистикой. Для проверки другой роли нужно выйти и войти под соответствующим
+аккаунтом: role switcher намеренно отсутствует. Регистрация всегда создаёт только `USER`.
+
 ## Маршруты
 
-Публичные маршруты:
+Публичные и пользовательские:
 
-- `/` — Spotlight-поиск, состояние индекса и вход в пользовательский контур;
-- `/search` — документная выдача и mock RAG с URL-состоянием;
-- `/documents/:documentId` — полная ветка вопроса и ответов;
-- `/login` — вход с безопасным `returnTo`;
-- `/register` — регистрация и автоматический вход;
-- `/403` — недостаточно прав;
-- `*` — страница 404.
+- `/` — Spotlight-поиск;
+- `/search` — документы или mock RAG с URL-состоянием;
+- `/documents/:documentId` — публичное представление документа;
+- `/login`, `/register` — mock-auth с безопасным `returnTo`;
+- `/profile`, `/history`, `/saved` — защищённые пользовательские страницы;
+- `/403` и `*` — доступ запрещён и 404.
 
-Маршруты под `ProtectedRoute`:
+EDITOR routes (ADMIN также имеет доступ):
 
-- `/profile` — профиль, статистика и поисковые настройки;
-- `/history` — личная история поисков и RAG-запросов;
-- `/saved` — личная библиотека документов.
+- `/editor` — dashboard редактора;
+- `/editor/documents` — URL-фильтруемый список документов и bulk actions;
+- `/editor/documents/:documentId` — оригинал, управленческие metadata, audit и jobs;
+- `/editor/jobs` — доступные редактору фоновые задания.
 
-Неавторизованный пользователь перенаправляется на `/login`. Параметр `returnTo` принимает только
-внутренний путь, начинающийся с одного `/`; внешние URL и пути вида `//example.org` отклоняются.
+ADMIN routes:
 
-Поддерживаемые параметры `/search`: `q`, `view`, `mode`, `page`, `page_size`, `tags`, `min_score`,
-`accepted`, `has_code`, `sort`. Явные параметры URL имеют приоритет над настройками профиля.
+- `/admin` — KPI и три содержательных графика;
+- `/admin/users` — роли, блокировка и user details;
+- `/admin/sources` — source configuration и sync;
+- `/admin/jobs` — полный lifecycle jobs;
+- `/admin/audit` — неизменяемый журнал аудита;
+- `/admin/system` — mock telemetry и system settings.
 
-## Mock-режим
+Гость на защищённом route перенаправляется на `/login` с внутренним `returnTo`. Пути внешнего
+домена и protocol-relative значения `//host` отклоняются. Авторизованный пользователь без права
+получает `/403`, без redirect loop и без краткого отображения закрытой страницы.
 
-По умолчанию используется `VITE_USE_MOCKS=true`. Mock API имитирует задержки, ошибки,
-фильтрацию, сортировку, pagination, streaming RAG и server-like пользовательские операции. В базе
-22 синтетических документа; большие фрагменты реальных публикаций не копируются.
+## RBAC и permission matrix
 
-Демонстрационный аккаунт:
+Центральная matrix находится в `src/features/auth/permissions.ts`. UI использует
+`hasPermission`, `hasAnyPermission`, `hasAllPermissions` и `usePermissions`; mock API повторно
+проверяет permission и получает actor только из активной сессии.
 
-```text
-user@pyanswer.local
-Demo123!
-```
+| Группа | Permissions                                                                                                                                      |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| USER   | `SEARCH_USE`, `RAG_USE`, `PROFILE_MANAGE`, `HISTORY_MANAGE`, `SAVED_MANAGE`                                                                      |
+| EDITOR | все USER + `EDITOR_ACCESS`, `MANAGED_DOCUMENTS_VIEW`, `DOCUMENT_METADATA_EDIT`, `DOCUMENT_STATUS_CHANGE`, `DOCUMENT_REINDEX`, `EDITOR_JOBS_VIEW` |
+| ADMIN  | все USER и EDITOR + `ADMIN_ACCESS`, `USERS_MANAGE`, `SOURCES_MANAGE`, `ADMIN_JOBS_MANAGE`, `AUDIT_VIEW`, `SYSTEM_VIEW`, `SYSTEM_SETTINGS_MANAGE` |
 
-Дополнительные аккаунты создаются на `/register`. Email сравнивается без учёта регистра, пароль
-проверяется по требованиям формы, всем новым пользователям назначается роль `USER`.
+Скрытие navigation — только UX. Прямой запрещённый вызов mock API возвращает единый `ApiError` с
+`status=403`, `code=FORBIDDEN`, `message` и опциональными `details`. HTTP adapter ожидает тот же
+формат для 400/401/403/404/409/422/500.
 
-Для принудительной проверки error state:
+Frontend RBAC не является production-защитой. Будущий FastAPI обязан заново аутентифицировать
+actor и проверять каждое permission на сервере, не доверяя роли, URL или payload браузера.
 
-```env
-VITE_MOCK_FORCE_ERROR=true
-```
+## Mock credentials, сессия и migration
 
-Запрос `__error__` также вызывает тестовую ошибку поиска. Запрос вне локальной тематики, например
-«квантовая хромодинамика», демонстрирует RAG-сценарий недостаточного контекста.
+Storage adapter расположен только в `src/mocks`; UI не обращается к `localStorage` или
+`sessionStorage` напрямую. Текущий namespace — `pyanswer:mock:v2:*`.
 
-### Mock credentials и сессия
+- credentials содержат случайную salt и browser-side SHA digest, но не открытый пароль;
+- `User` и admin responses не содержат password, salt, digest или session reference;
+- session хранит только `userId`, `expiresAt`, `mockSessionVersion`;
+- remember-session хранится в `localStorage`, короткая session — в `sessionStorage`;
+- `accountVersion` повышается при role/status change и инвалидирует старую session;
+- `BLOCKED` не может войти или восстановить старую session, данные пользователя сохраняются;
+- seed не удаляет зарегистрированных пользователей и изолированные history/saved/feedback;
+- миграция копирует корректные v1 records, добавляет безопасные defaults и только после успешного
+  Stage 3 seed переключает schema marker;
+- повреждённые JSON records удаляются точечно и не ломают приложение;
+- `localStorage.clear()` не используется.
 
-Пользовательское mock-хранилище изолировано в `src/mocks` и использует versioned namespace
-`pyanswer:mock:v1:*`. UI-компоненты не управляют auth-сессией напрямую.
+Browser-side digest — только демонстрационный механизм. Production-аутентификация должна быть
+реализована FastAPI + Argon2 на сервере и защищённой `HttpOnly`, `Secure`, `SameSite` cookie.
+Bearer token и access token в browser storage не используются.
 
-- mock credentials содержат случайную salt и digest Web Crypto, но не открытый пароль;
-- публичный `User` не содержит password, digest или salt;
-- сессия содержит только `userId`, `expiresAt` и `mockSessionVersion`;
-- при «Запомнить меня» ссылка сессии хранится в `localStorage`;
-- без запоминания ссылка сессии хранится в `sessionStorage`;
-- повреждённые JSON-записи безопасно отбрасываются;
-- данные истории, сохранений, preferences и feedback разделены по `userId`.
+Для локального сброса удалите ключи с префиксом `pyanswer:mock:` в DevTools → Application. Это
+удалит только mock-данные текущего origin.
 
-Browser-side digest — только демонстрационный mock-механизм и не является безопасной
-production-аутентификацией. В следующем серверном этапе проверка credentials должна выполняться в
-FastAPI с Argon2, а сессия — передаваться через защищённую `HttpOnly` cookie. Frontend не хранит
-секреты и не добавляет Bearer-заголовок.
+## Управление документами
 
-Чтобы сбросить mock-данные, откройте DevTools → Application → Storage → Clear site data или удалите
-ключи с префиксом `pyanswer:mock:` из Local Storage и Session Storage для локального origin.
+Исходный массив публикаций остаётся единым. Repository хранит только управленческие metadata и
+на чтении объединяет их с оригинальным вопросом/ответами.
 
-### История, сохранения и feedback
+`DocumentStatus`: `ACTIVE`, `HIDDEN`, `PENDING`, `FAILED`, `OUTDATED`.
 
-- успешный поиск или RAG авторизованного пользователя автоматически создаёт одну запись истории;
-- пустые, гостевые и неуспешные запросы не записываются;
-- быстрые технические повторы дедуплицируются;
-- повтор из истории восстанавливает режим, представление, фильтры, сортировку и размер страницы;
-- сохранение документа идемпотентно и синхронизируется через точечную invalidation TanStack Query;
-- у пользователя может быть только одна актуальная оценка конкретного RAG-response;
-- positive/negative feedback можно изменить или удалить;
-- отрицательная оценка поддерживает необязательную причину и комментарий до 500 символов.
+`IndexStatus`: `READY`, `PENDING`, `FAILED`, `NOT_INDEXED`, `OUTDATED`.
 
-## Пользовательские настройки
+EDITOR меняет только `normalizedTitle`, `managedTags` и `editorialNote`; tags приводятся к lowercase,
+trim, удаляются пустые значения и дубли. Оригинальные URL, автор, тексты, даты и ID не меняются.
+Сохранение повышает version, фиксирует actor/time и создаёт audit event.
 
-На `/profile` сохраняются индивидуальные значения:
+- `ACTIVE` и `OUTDATED` участвуют в публичном поиске/RAG;
+- `HIDDEN`, `PENDING`, `FAILED` исключены из поиска и источников RAG;
+- публичная ссылка на недоступный документ не раскрывает его содержимое;
+- hide требует причины, restore возвращает материал в публичный контур;
+- reindex переводит индексы в `PENDING` и создаёт одно активное `DOCUMENT_REINDEX` job;
+- bulk hide/restore/reindex принимает до 100 ID, защищён от double submit и возвращает success,
+  skipped, failed по каждому документу с общим `batchId` и одним audit batch;
+- физическое удаление документов отсутствует.
 
-- режим поиска по умолчанию: BM25, Vector или Hybrid;
-- представление по умолчанию: документы или ответ ИИ;
-- 10, 20 или 50 результатов на странице;
-- автоматическое раскрытие технических score;
-- подтверждение перехода на внешний источник.
+## Job engine
 
-Настройки применяются к новым поискам с главной страницы и не заменяют явно переданные параметры
-URL. Изменение email проверяет формат и уникальность, не завершает текущую сессию и применяется к
-следующему входу.
+`JobType`: `SOURCE_SYNC`, `DOCUMENT_REINDEX`, `FULL_REINDEX`, `HEALTH_CHECK`.
 
-## Архитектура
+`JobStatus`: `QUEUED`, `RUNNING`, `COMPLETED`, `FAILED`, `CANCELLED`.
+
+Job progress, stage, processedItems и finishedAt вычисляются детерминированно из `startedAt`,
+`plannedDurationMs` и текущего времени при чтении repository. Глобальных бесконечных timers нет;
+UI refetch включён только пока присутствует активный job, его можно остановить и обновить вручную.
+Tests используют fake timers.
+
+EDITOR только просматривает свои допустимые jobs. ADMIN может отменить cancellable queued/running,
+повторить failed/cancelled с `retryOfJobId` и запустить единственный активный `FULL_REINDEX`.
+
+## Пользователи и источники
+
+Только ADMIN управляет пользователями. API запрещает self-role-change, self-block и операции,
+которые могли бы оставить систему без активного ADMIN. Role/status change повышает accountVersion
+и создаёт audit event. Credential records не возвращаются таблице или detail drawer.
+
+Основной source:
+
+- `Stack Overflow на русском`, `STACK_EXCHANGE`;
+- `https://ru.stackoverflow.com`, site `ru.stackoverflow`, tag `python`;
+- target 25 000 документов, до 3 дополнительных ответов, page size 100.
+
+ADMIN меняет ограниченные numeric settings и enabled-state, выполняет mock connection test,
+запускает/останавливает единственный source sync. Реальный Stack Exchange API key не требуется и
+не хранится; `apiKeyConfigured` — только синтетический флаг.
+
+## Audit, system status и settings
+
+Audit создаётся внутри repository вместе с бизнес-операцией, а не отдельным вызовом UI. Событие
+содержит actor, action, entity, outcome, requestId, batchId и безопасные before/after/metadata.
+Пароли, digest, salt, session references, tokens и secrets не записываются. UI не предоставляет
+редактирование или удаление audit; diff отображается через безопасный JSON, без
+`dangerouslySetInnerHTML`.
+
+System page показывает только синтетические сервисы и конфигурацию Ubuntu / i5-13400F / 32 ГБ /
+RTX 3080 Ti 12 ГБ / лимит 35 ГБ. Браузер не читает реальные hardware metrics. Health check
+обновляет timestamp, создаёт job и audit event.
+
+System settings:
+
+- `searchCandidatesLimit`, `rerankerLimit`, `ragSourcesLimit`;
+- `defaultMinimumConfidence`;
+- `allowGuestSearch`, `allowGuestRag`;
+- `historyRetentionDays`, `auditRetentionDays`.
+
+Mock API реально применяет `allowGuestSearch`, `allowGuestRag` и `ragSourcesLimit`. Изменения
+валидируются, подтверждаются, сохраняются через API и логируются.
+
+## Архитектура и cache
 
 ```text
 src/
-  api/          единый контракт, mock/HTTP selection, query keys и cache helpers
-  app/          providers, QueryClient и Error Boundary
-  components/   UI, dialogs, navigation и технические панели
-  features/     auth, search, RAG и documents
-  hooks/        общие клавиатурные хуки
-  layouts/      адаптивный workspace с mobile drawers
-  mocks/        данные, repository, versioned storage и mock API
-  pages/        маршрутные страницы
-  routes/       конфигурация публичных и защищённых маршрутов
-  store/        тема интерфейса
-  test/         тестовые providers и browser setup
-  types/        публичные доменные TypeScript-типы
-  utils/        URL, валидация и форматирование
+  api/                 общий ApiClient, HTTP/mock adapters, ApiError, query keys/cache
+  app/                 providers и Error Boundary
+  components/
+    layout/            публичная navigation
+    management/        management UI и dialogs
+    ui/                базовые компоненты
+  features/
+    auth/              session, permission matrix, guards
+    documents/ rag/ search/
+  layouts/             WorkspaceLayout и ManagementLayout
+  mocks/               v2 storage, auth repository, management repository, audit, job engine
+  pages/
+    admin/ editor/ management/
+  routes/              lazy routes и guards
+  types/               публичные closed-union contracts
+  utils/               URL state, validation, formatting
 ```
 
-Server-like данные пользователя находятся в TanStack Query: current user, статистика, история,
-сохранённые документы и feedback. `AuthContext` предоставляет только auth-status, текущего
-пользователя и auth-actions. При logout удаляется пользовательская часть query cache, системный
-status cache сохраняется.
+Query key factories разделяют public/user/editor/admin server state. После document mutation
+точечно обновляются editor/admin dashboards, list/detail, public search/document, saved и audit.
+После source mutation обновляются source/jobs/dashboard/audit. Logout и смена пользователя удаляют
+только user/role-sensitive roots, поэтому admin cache не показывается следующему USER.
 
-Основные новые типы Этапа 2: `RegisterRequest`, `LoginRequest`, `AuthSession`, `AuthStatus`,
-`AccountStatus`, `UpdateProfileRequest`, `UserPreferences`, `UserStats`, `SearchHistoryItem`,
-`HistoryFilters`, `HistoryResponse`, `SavedDocument`, `SavedDocumentsFilters`,
-`SavedDocumentsResponse`, `FeedbackValue`, `FeedbackReason`, `Feedback` и `RagResponseId`.
+Основные типы Этапа 3: `Permission`, `PermissionMap`, `DocumentStatus`, `IndexStatus`,
+`ManagedDocument`, `ManagedDocumentFilters`, `ManagedDocumentUpdate`, `BulkDocumentResult`,
+`EditorDashboard`, `AdminUser`, `Source`, `BackgroundJob`, `AuditEvent`, `SystemService`,
+`SystemStatus`, `SystemSettings`, `AdminDashboard`, `JsonValue` и `JsonObject`.
 
-## API adapter и будущий FastAPI
+## API contract и будущий FastAPI
 
-Страницы и feature-компоненты не вызывают `fetch` напрямую. Они используют `api` из
-`src/api/index.ts`, который выбирает одинаково типизированные `mockApi` или `httpApi`. HTTP-адаптер
-всегда отправляет `credentials: 'include'` для будущей cookie-сессии.
+Страницы не вызывают `fetch`: только `api` из `src/api`. HTTP adapter всегда использует
+`credentials: 'include'` и не создаёт Authorization/Bearer header.
 
-Поиск и документы:
+Editor endpoints:
 
-- `searchDocuments` → `GET /api/search`;
-- `askQuestion` → `POST /api/ask`;
-- `getDocument` → `GET /api/documents/:documentId`;
-- `getSystemStatus` → `GET /api/status`.
+- `GET /api/editor/dashboard`;
+- `GET /api/editor/documents`, `GET /api/editor/documents/:id`;
+- `PATCH /api/editor/documents/:id/metadata`;
+- `POST /api/editor/documents/:id/hide|restore|reindex`;
+- `POST /api/editor/documents/bulk`;
+- `GET /api/editor/jobs`.
 
-Аутентификация и профиль:
+Admin endpoints:
 
-- `register` → `POST /api/auth/register`;
-- `login` → `POST /api/auth/login`;
-- `logout` → `POST /api/auth/logout`;
-- `getCurrentUser` → `GET /api/auth/me`;
-- `updateCurrentUser` → `PATCH /api/users/me`;
-- `getUserStats` → `GET /api/users/me/stats`.
+- `GET /api/admin/dashboard`;
+- `GET /api/admin/users`, `GET /api/admin/users/:id`;
+- `PATCH /api/admin/users/:id/role`, `POST /api/admin/users/:id/block|unblock`;
+- `GET/PATCH /api/admin/sources/:id`, `POST /api/admin/sources/:id/test|sync|stop`;
+- `GET /api/admin/jobs`, `GET /api/admin/jobs/:id`;
+- `POST /api/admin/jobs/:id/retry|cancel`, `POST /api/admin/jobs/full-reindex`;
+- `GET /api/admin/audit`, `GET /api/admin/audit/:id`;
+- `GET /api/admin/system`, `POST /api/admin/system/health-check`;
+- `GET/PATCH /api/admin/system/settings`.
 
-История, сохранения и feedback:
-
-- `getHistory` → `GET /api/history`;
-- `deleteHistoryItem` → `DELETE /api/history/:historyId`;
-- `clearHistory` → `DELETE /api/history`;
-- `getSavedDocuments` → `GET /api/saved`;
-- `saveDocument` → `POST /api/saved/:documentId`;
-- `unsaveDocument` → `DELETE /api/saved/:documentId`;
-- `sendFeedback` → `POST /api/feedback`;
-- `deleteFeedback` → `DELETE /api/feedback/:feedbackId`;
-- `getFeedbackForResponse` → `GET /api/feedback/by-response/:responseId`.
+Пользовательские Stage 1/2 endpoints (`/search`, `/ask`, `/documents`, `/auth`, `/users/me`,
+`/history`, `/saved`, `/feedback`) сохранены. Публичный технический status использует
+`getPublicSystemStatus`, административный — отдельный `getSystemStatus`.
 
 Для подключения FastAPI:
 
-1. реализовать endpoint с JSON-контрактами из `src/types`;
-2. хранить credentials и Argon2 digest только на сервере;
-3. выдавать сессионную `HttpOnly`, `Secure`, `SameSite` cookie;
-4. настроить CORS с credentials для точного frontend origin;
-5. установить `VITE_USE_MOCKS=false`;
-6. задать `VITE_API_BASE_URL=http://localhost:8000/api`;
-7. перезапустить Vite или пересобрать production bundle.
+1. реализовать JSON-контракты из `src/types` и одинаковый `ApiError`;
+2. повторить permission matrix и business invariants на сервере;
+3. хранить Argon2 credentials и audit только на сервере;
+4. выдавать HttpOnly cookie и настроить credentialed CORS для точного origin;
+5. установить `VITE_USE_MOCKS=false` и `VITE_API_BASE_URL`;
+6. пересобрать frontend.
 
-Прямая интеграция браузера с Ollama не предусмотрена: будущий локальный LLM вызывается только
-backend-сервисом.
+Браузер никогда не вызывает Ollama напрямую.
 
-## Переменные окружения
+## Environment
 
-| Переменная            | Значение по умолчанию     | Назначение                   |
-| --------------------- | ------------------------- | ---------------------------- |
-| VITE_USE_MOCKS        | true                      | Выбор mock или HTTP adapter  |
-| VITE_API_BASE_URL     | http://localhost:8000/api | Базовый URL будущего FastAPI |
-| VITE_MOCK_FORCE_ERROR | false                     | Принудительный mock error    |
+| Переменная              | Default                     | Назначение                      |
+| ----------------------- | --------------------------- | ------------------------------- |
+| `VITE_USE_MOCKS`        | `true`                      | выбор mock или HTTP adapter     |
+| `VITE_API_BASE_URL`     | `http://localhost:8000/api` | будущий FastAPI base URL        |
+| `VITE_MOCK_FORCE_ERROR` | `false`                     | принудительный mock error state |
 
 `.env.example` не содержит секретов.
 
 ## Production build и Docker
 
-Локальная production-сборка:
-
 ```bash
 npm run build
 npm run preview
-```
-
-Bundle создаётся в `dist/`.
-
-Docker frontend:
-
-```bash
 docker build -t pyanswer-frontend .
 docker run --rm -p 8080:80 pyanswer-frontend
 ```
 
-Multi-stage image собирает Vite bundle и обслуживает его через nginx. Конфигурация включает React
-Router fallback, immutable cache для assets и healthcheck `/healthz`. Полный `docker-compose` на
-этом этапе не используется.
+Multi-stage image собирает Vite bundle и отдаёт его через nginx. Конфигурация сохраняет React
+Router fallback, immutable assets cache и `/healthz`. Полного Docker Compose на Этапе 3 нет.

@@ -20,8 +20,14 @@ import type {
 } from '../types';
 import { clamp } from '../utils/format';
 import { emptyFilters } from '../utils/searchParams';
-import { mockDocuments, mockSystemStatus } from './data';
+import { mockSystemStatus } from './data';
+import { mockManagementRepository } from './mockManagementRepository';
 import { mockRepository } from './mockRepository';
+
+async function initializeData(): Promise<void> {
+  await mockRepository.initialize();
+  mockManagementRepository.initialize();
+}
 
 const stopWords = new Set([
   'как',
@@ -148,13 +154,19 @@ async function searchDocuments(
   request: SearchRequest,
   signal?: AbortSignal,
 ): Promise<SearchResponse> {
+  await initializeData();
   await delay(320, signal);
   maybeFail();
   if (request.q === '__error__') throw new ApiError('Тестовая ошибка поискового индекса.', 503);
 
+  const policy = mockManagementRepository.getPublicAccessPolicy();
+  if (!policy.allowGuestSearch && !mockRepository.getOptionalActor()) {
+    throw new ApiError('Для поиска необходимо войти.', 401, 'UNAUTHORIZED');
+  }
   const terms = tokenize(request.q);
   const savedIds = mockRepository.getSavedDocumentIds();
-  let ranked = mockDocuments
+  let ranked = mockManagementRepository
+    .getPublicDocuments()
     .map((document) => ({ document, relevance: relevanceFor(document, terms) }))
     .filter(({ relevance }) => terms.length === 0 || relevance > 0)
     .filter(({ document }) =>
@@ -269,8 +281,13 @@ async function askQuestion(
   request: AskRequest,
   options: AskStreamOptions = {},
 ): Promise<AskResponse> {
+  await initializeData();
   const filters = request.filters ?? emptyFilters;
   maybeFail();
+  const policy = mockManagementRepository.getPublicAccessPolicy();
+  if (!policy.allowGuestRag && !mockRepository.getOptionalActor()) {
+    throw new ApiError('Для ответа ИИ необходимо войти.', 401, 'UNAUTHORIZED');
+  }
   options.onStage?.('searching');
   await delay(90, options.signal);
   const search = await searchDocuments(
@@ -279,7 +296,7 @@ async function askQuestion(
       view: 'answer',
       mode: request.mode,
       page: 1,
-      pageSize: request.maxSources ?? 3,
+      pageSize: Math.min(request.maxSources ?? policy.ragSourcesLimit, policy.ragSourcesLimit),
       filters,
     },
     options.signal,
@@ -291,9 +308,16 @@ async function askQuestion(
   options.onStage?.('selecting');
   await delay(55, options.signal);
 
-  const selectedResults = search.results.slice(0, request.maxSources ?? 3);
+  const selectedResults = search.results.slice(
+    0,
+    Math.min(request.maxSources ?? policy.ragSourcesLimit, policy.ragSourcesLimit),
+  );
   const selectedDocuments = selectedResults
-    .map((result) => mockDocuments.find((document) => document.id === result.documentId))
+    .map((result) =>
+      mockManagementRepository
+        .getPublicDocuments()
+        .find((document) => document.id === result.documentId),
+    )
     .filter((document): document is Document => Boolean(document));
   const insufficientContext = selectedDocuments.length === 0;
   const answer = insufficientContext
@@ -347,16 +371,15 @@ async function askQuestion(
 }
 
 async function getDocument(documentId: string, signal?: AbortSignal): Promise<Document> {
+  await initializeData();
   await delay(220, signal);
   maybeFail();
-  const document = mockDocuments.find((item) => item.id === documentId);
-  if (!document) throw new ApiError('Документ не найден.', 404);
+  const document = mockManagementRepository.getPublicDocument(documentId);
   return { ...document, saved: mockRepository.getSavedDocumentIds().has(documentId) };
 }
 
 function savedDocument(documentId: string, savedAt: string): SavedDocument {
-  const document = mockDocuments.find((item) => item.id === documentId);
-  if (!document) throw new ApiError('Документ не найден.', 404);
+  const document = mockManagementRepository.getPublicDocument(documentId);
   return {
     ...toSearchResult(document, 0.82, 'hybrid', new Set([documentId])),
     savedAt,
@@ -367,12 +390,21 @@ async function getSavedDocuments(
   filters: SavedDocumentsFilters,
   signal?: AbortSignal,
 ): Promise<SavedDocumentsResponse> {
+  await initializeData();
   await delay(240, signal);
   maybeFail();
   const search = filters.search.trim().toLocaleLowerCase('ru-RU');
   let items = mockRepository
     .getSavedEntries()
-    .map((entry) => savedDocument(entry.documentId, entry.savedAt))
+    .flatMap((entry) => {
+      try {
+        return [savedDocument(entry.documentId, entry.savedAt)];
+      } catch (error) {
+        if (error instanceof ApiError && error.details?.reason === 'DOCUMENT_UNAVAILABLE')
+          return [];
+        throw error;
+      }
+    })
     .filter(
       (item) =>
         !search ||
@@ -411,12 +443,16 @@ export const mockApi: ApiClient = {
   async register(value: RegisterRequest) {
     await delay(280);
     maybeFail();
-    return mockRepository.register(value);
+    const user = await mockRepository.register(value);
+    mockManagementRepository.initialize();
+    return user;
   },
   async login(value: LoginRequest) {
     await delay(280);
     maybeFail();
-    return mockRepository.login(value);
+    const user = await mockRepository.login(value);
+    mockManagementRepository.initialize();
+    return user;
   },
   async logout() {
     await delay(100);
@@ -424,7 +460,9 @@ export const mockApi: ApiClient = {
   },
   async getCurrentUser() {
     await delay(80);
-    return mockRepository.getCurrentUser();
+    const user = await mockRepository.getCurrentUser();
+    mockManagementRepository.initialize();
+    return user;
   },
   async updateCurrentUser(value: UpdateProfileRequest) {
     await delay(180);
@@ -453,11 +491,10 @@ export const mockApi: ApiClient = {
   },
   getSavedDocuments,
   async saveDocument(documentId) {
+    await initializeData();
     await delay(140);
     maybeFail();
-    if (!mockDocuments.some((document) => document.id === documentId)) {
-      throw new ApiError('Документ не найден.', 404);
-    }
+    mockManagementRepository.getPublicDocument(documentId);
     const entry = mockRepository.saveDocument(documentId);
     return savedDocument(entry.documentId, entry.savedAt);
   },
@@ -481,9 +518,207 @@ export const mockApi: ApiClient = {
     maybeFail();
     return mockRepository.getFeedbackForResponse(responseId);
   },
-  async getSystemStatus(signal) {
+  async getPublicSystemStatus(signal) {
+    await initializeData();
     await delay(110, signal);
     maybeFail();
     return mockSystemStatus;
+  },
+  async getPublicAccessPolicy(signal) {
+    await initializeData();
+    await delay(40, signal);
+    return mockManagementRepository.getPublicAccessPolicy();
+  },
+  async getEditorDashboard(signal) {
+    await initializeData();
+    await delay(160, signal);
+    maybeFail();
+    return mockManagementRepository.getEditorDashboard();
+  },
+  async getManagedDocuments(filters, signal) {
+    await initializeData();
+    await delay(180, signal);
+    maybeFail();
+    return mockManagementRepository.getManagedDocuments(filters);
+  },
+  async getManagedDocument(documentId, signal) {
+    await initializeData();
+    await delay(140, signal);
+    maybeFail();
+    return mockManagementRepository.getManagedDocument(documentId);
+  },
+  async updateDocumentMetadata(documentId, request) {
+    await initializeData();
+    await delay(160);
+    maybeFail();
+    return mockManagementRepository.updateDocumentMetadata(documentId, request);
+  },
+  async hideDocument(documentId, reason) {
+    await initializeData();
+    await delay(140);
+    maybeFail();
+    return mockManagementRepository.hideDocument(documentId, reason);
+  },
+  async restoreDocument(documentId) {
+    await initializeData();
+    await delay(140);
+    maybeFail();
+    return mockManagementRepository.restoreDocument(documentId);
+  },
+  async reindexDocument(documentId) {
+    await initializeData();
+    await delay(140);
+    maybeFail();
+    return mockManagementRepository.reindexDocument(documentId);
+  },
+  async bulkUpdateDocuments(request) {
+    await initializeData();
+    await delay(190);
+    maybeFail();
+    return mockManagementRepository.bulkUpdateDocuments(request);
+  },
+  async getEditorJobs(filters, signal) {
+    await initializeData();
+    await delay(140, signal);
+    maybeFail();
+    return mockManagementRepository.getEditorJobs(filters);
+  },
+  async getAdminDashboard(signal) {
+    await initializeData();
+    await delay(180, signal);
+    maybeFail();
+    return mockManagementRepository.getAdminDashboard();
+  },
+  async getAdminUsers(filters, signal) {
+    await initializeData();
+    await delay(170, signal);
+    maybeFail();
+    return mockRepository.getAdminUsers(filters);
+  },
+  async getAdminUser(userId, signal) {
+    await initializeData();
+    await delay(130, signal);
+    maybeFail();
+    return mockRepository.getAdminUser(userId);
+  },
+  async updateUserRole(userId, request) {
+    await initializeData();
+    await delay(150);
+    maybeFail();
+    return mockRepository.updateUserRole(userId, request);
+  },
+  async blockUser(userId, request) {
+    await initializeData();
+    await delay(150);
+    maybeFail();
+    return mockRepository.blockUser(userId, request);
+  },
+  async unblockUser(userId) {
+    await initializeData();
+    await delay(140);
+    maybeFail();
+    return mockRepository.unblockUser(userId);
+  },
+  async getSources(filters, signal) {
+    await initializeData();
+    await delay(150, signal);
+    maybeFail();
+    return mockManagementRepository.getSources(filters);
+  },
+  async getSource(sourceIdValue, signal) {
+    await initializeData();
+    await delay(110, signal);
+    maybeFail();
+    return mockManagementRepository.getSource(sourceIdValue);
+  },
+  async updateSource(sourceIdValue, request) {
+    await initializeData();
+    await delay(150);
+    maybeFail();
+    return mockManagementRepository.updateSource(sourceIdValue, request);
+  },
+  async testSourceConnection(sourceIdValue) {
+    await initializeData();
+    await delay(180);
+    maybeFail();
+    return mockManagementRepository.testSourceConnection(sourceIdValue);
+  },
+  async startSourceSync(sourceIdValue) {
+    await initializeData();
+    await delay(150);
+    maybeFail();
+    return mockManagementRepository.startSourceSync(sourceIdValue);
+  },
+  async stopSourceSync(sourceIdValue) {
+    await initializeData();
+    await delay(150);
+    maybeFail();
+    return mockManagementRepository.stopSourceSync(sourceIdValue);
+  },
+  async getAdminJobs(filters, signal) {
+    await initializeData();
+    await delay(140, signal);
+    maybeFail();
+    return mockManagementRepository.getAdminJobs(filters);
+  },
+  async getAdminJob(jobId, signal) {
+    await initializeData();
+    await delay(100, signal);
+    maybeFail();
+    return mockManagementRepository.getAdminJob(jobId);
+  },
+  async retryJob(jobId) {
+    await initializeData();
+    await delay(130);
+    maybeFail();
+    return mockManagementRepository.retryJob(jobId);
+  },
+  async cancelJob(jobId) {
+    await initializeData();
+    await delay(130);
+    maybeFail();
+    return mockManagementRepository.cancelJob(jobId);
+  },
+  async startFullReindex() {
+    await initializeData();
+    await delay(150);
+    maybeFail();
+    return mockManagementRepository.startFullReindex();
+  },
+  async getAuditEvents(filters, signal) {
+    await initializeData();
+    await delay(150, signal);
+    maybeFail();
+    return mockManagementRepository.getAuditEvents(filters);
+  },
+  async getAuditEvent(eventId, signal) {
+    await initializeData();
+    await delay(100, signal);
+    maybeFail();
+    return mockManagementRepository.getAuditEvent(eventId);
+  },
+  async getSystemStatus(signal) {
+    await initializeData();
+    await delay(130, signal);
+    maybeFail();
+    return mockManagementRepository.getSystemStatus();
+  },
+  async runSystemHealthCheck() {
+    await initializeData();
+    await delay(190);
+    maybeFail();
+    return mockManagementRepository.runSystemHealthCheck();
+  },
+  async getSystemSettings(signal) {
+    await initializeData();
+    await delay(110, signal);
+    maybeFail();
+    return mockManagementRepository.getSystemSettings();
+  },
+  async updateSystemSettings(request) {
+    await initializeData();
+    await delay(150);
+    maybeFail();
+    return mockManagementRepository.updateSystemSettings(request);
   },
 };

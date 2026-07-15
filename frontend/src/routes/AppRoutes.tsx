@@ -1,6 +1,7 @@
 import { lazy, Suspense } from 'react';
 import { Route, Routes } from 'react-router-dom';
 import { ProtectedRoute } from '../features/auth/ProtectedRoute';
+import { PermissionRoute } from '../features/auth/PermissionRoute';
 
 const HomePage = lazy(() =>
   import('../pages/HomePage').then((module) => ({ default: module.HomePage })),
@@ -31,6 +32,47 @@ const ForbiddenPage = lazy(() =>
 );
 const NotFoundPage = lazy(() =>
   import('../pages/NotFoundPage').then((module) => ({ default: module.NotFoundPage })),
+);
+const ManagementLayout = lazy(() =>
+  import('../layouts/ManagementLayout').then((module) => ({ default: module.ManagementLayout })),
+);
+const EditorDashboardPage = lazy(() =>
+  import('../pages/editor/EditorDashboardPage').then((module) => ({
+    default: module.EditorDashboardPage,
+  })),
+);
+const ManagedDocumentsPage = lazy(() =>
+  import('../pages/editor/ManagedDocumentsPage').then((module) => ({
+    default: module.ManagedDocumentsPage,
+  })),
+);
+const ManagedDocumentPage = lazy(() =>
+  import('../pages/editor/ManagedDocumentPage').then((module) => ({
+    default: module.ManagedDocumentPage,
+  })),
+);
+const EditorJobsPage = lazy(() =>
+  import('../pages/management/JobsPage').then((module) => ({ default: module.EditorJobsPage })),
+);
+const AdminDashboardPage = lazy(() =>
+  import('../pages/admin/AdminDashboardPage').then((module) => ({
+    default: module.AdminDashboardPage,
+  })),
+);
+const AdminUsersPage = lazy(() =>
+  import('../pages/admin/AdminUsersPage').then((module) => ({ default: module.AdminUsersPage })),
+);
+const SourcesPage = lazy(() =>
+  import('../pages/admin/SourcesPage').then((module) => ({ default: module.SourcesPage })),
+);
+const AdminJobsPage = lazy(() =>
+  import('../pages/management/JobsPage').then((module) => ({ default: module.AdminJobsPage })),
+);
+const AuditPage = lazy(() =>
+  import('../pages/admin/AuditPage').then((module) => ({ default: module.AuditPage })),
+);
+const SystemPage = lazy(() =>
+  import('../pages/admin/SystemPage').then((module) => ({ default: module.SystemPage })),
 );
 
 export function AppRoutes() {
@@ -73,6 +115,32 @@ export function AppRoutes() {
           }
         />
         <Route path="/403" element={<ForbiddenPage />} />
+        <Route
+          element={
+            <PermissionRoute permissions={['EDITOR_ACCESS']}>
+              <ManagementLayout />
+            </PermissionRoute>
+          }
+        >
+          <Route path="/editor" element={<EditorDashboardPage />} />
+          <Route path="/editor/documents" element={<ManagedDocumentsPage />} />
+          <Route path="/editor/documents/:documentId" element={<ManagedDocumentPage />} />
+          <Route path="/editor/jobs" element={<EditorJobsPage />} />
+        </Route>
+        <Route
+          element={
+            <PermissionRoute permissions={['ADMIN_ACCESS']}>
+              <ManagementLayout />
+            </PermissionRoute>
+          }
+        >
+          <Route path="/admin" element={<AdminDashboardPage />} />
+          <Route path="/admin/users" element={<AdminUsersPage />} />
+          <Route path="/admin/sources" element={<SourcesPage />} />
+          <Route path="/admin/jobs" element={<AdminJobsPage />} />
+          <Route path="/admin/audit" element={<AuditPage />} />
+          <Route path="/admin/system" element={<SystemPage />} />
+        </Route>
         <Route path="*" element={<NotFoundPage />} />
       </Routes>
     </Suspense>
