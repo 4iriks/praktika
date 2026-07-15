@@ -371,17 +371,27 @@ function NegativeFeedbackDialog({
             </label>
           ))}
         </div>
-        <label className="mt-4 block text-xs font-medium text-muted">
+        <label
+          htmlFor="negative-feedback-comment"
+          className="mt-4 block text-xs font-medium text-muted"
+        >
           Дополнительный комментарий
-          <textarea
-            value={comment}
-            onChange={(event) => setComment(event.target.value.slice(0, 500))}
-            rows={3}
-            maxLength={500}
-            className="mt-2 w-full resize-none rounded-lg border border-line bg-elevated p-3 text-sm text-ink"
-          />
-          <span className="mt-1 block text-right font-mono text-[10px]">{comment.length}/500</span>
         </label>
+        <textarea
+          id="negative-feedback-comment"
+          aria-describedby="negative-feedback-counter"
+          value={comment}
+          onChange={(event) => setComment(event.target.value.slice(0, 500))}
+          rows={3}
+          maxLength={500}
+          className="mt-2 w-full resize-none rounded-lg border border-line bg-elevated p-3 text-sm text-ink"
+        />
+        <span
+          id="negative-feedback-counter"
+          className="mt-1 block text-right font-mono text-[10px] text-muted"
+        >
+          {comment.length}/500
+        </span>
         <div className="mt-4 flex justify-end gap-2">
           <Button variant="ghost" onClick={onClose}>
             Отмена
