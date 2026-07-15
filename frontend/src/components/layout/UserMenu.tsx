@@ -19,10 +19,11 @@ export function UserMenu() {
         </Link>
         <Link
           to="/register"
-          className="hidden h-9 items-center gap-1.5 rounded-lg border border-accent/35 bg-accent/10 px-3 text-xs text-indigo-300 transition hover:bg-accent/15 sm:inline-flex"
+          className="inline-flex size-9 items-center justify-center rounded-lg border border-accent/35 bg-accent/10 text-xs text-indigo-300 transition hover:bg-accent/15 sm:h-9 sm:w-auto sm:gap-1.5 sm:px-3"
+          aria-label="Создать аккаунт"
         >
           <UserPlus className="size-3.5" aria-hidden="true" />
-          Создать аккаунт
+          <span className="hidden sm:inline">Создать аккаунт</span>
         </Link>
       </div>
     );
