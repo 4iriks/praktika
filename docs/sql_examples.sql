@@ -59,3 +59,72 @@ JOIN sources AS s ON s.id = d.source_id
 WHERE d.bm25_status IN ('PENDING', 'FAILED', 'NOT_INDEXED', 'OUTDATED')
    OR d.vector_status IN ('PENDING', 'FAILED', 'NOT_INDEXED', 'OUTDATED')
 ORDER BY d.last_synced_at DESC, d.id;
+
+-- 9. Документы без сохранённых chunks.
+SELECT d.id, d.normalized_title, d.processing_status, d.chunks_count
+FROM documents AS d
+WHERE NOT EXISTS (
+  SELECT 1 FROM document_chunks AS c WHERE c.document_id = d.id
+)
+ORDER BY d.updated_at DESC, d.id;
+
+-- 10. Среднее и максимум chunks на документ по источникам.
+SELECT s.name, ROUND(AVG(stats.chunk_count), 2) AS avg_chunks, MAX(stats.chunk_count) AS max_chunks
+FROM sources AS s
+JOIN (
+  SELECT d.source_id, d.id, COUNT(c.id) AS chunk_count
+  FROM documents AS d
+  LEFT JOIN document_chunks AS c ON c.document_id = d.id
+  GROUP BY d.source_id, d.id
+) AS stats ON stats.source_id = s.id
+GROUP BY s.id, s.name
+ORDER BY avg_chunks DESC, s.id;
+
+-- 11. Processing и deduplication statuses.
+SELECT processing_status, deduplication_status, COUNT(*) AS documents_count
+FROM documents
+GROUP BY processing_status, deduplication_status
+ORDER BY processing_status, deduplication_status;
+
+-- 12. Exact duplicates с canonical document.
+SELECT duplicate.id, duplicate.external_id, canonical.id AS canonical_id,
+       canonical.external_id AS canonical_external_id, duplicate.content_hash
+FROM documents AS duplicate
+JOIN documents AS canonical ON canonical.id = duplicate.duplicate_of_document_id
+WHERE duplicate.deduplication_status = 'EXACT_DUPLICATE'
+ORDER BY duplicate.created_at DESC, duplicate.id;
+
+-- 13. История смысловых revisions с номером изменения (оконная функция).
+SELECT r.document_id, r.version, r.change_reason, r.created_at,
+       ROW_NUMBER() OVER (PARTITION BY r.document_id ORDER BY r.version) AS revision_number
+FROM document_revisions AS r
+ORDER BY r.document_id, r.version;
+
+-- 14. Документы, изменённые после последней индексации.
+SELECT id, normalized_title, source_updated_at, last_indexed_at, bm25_status, vector_status
+FROM documents
+WHERE last_indexed_at IS NULL OR source_updated_at > last_indexed_at
+ORDER BY source_updated_at DESC NULLS LAST, id;
+
+-- 15. Доля ingestion failures по заданиям.
+WITH per_job AS (
+  SELECT j.id, j.status, j.processed_items, COUNT(f.id) AS failures
+  FROM jobs AS j
+  LEFT JOIN ingestion_failures AS f ON f.job_id = j.id
+  WHERE j.type = 'SOURCE_SYNC'
+  GROUP BY j.id, j.status, j.processed_items
+)
+SELECT id, status, processed_items, failures,
+       ROUND(100.0 * failures / NULLIF(processed_items, 0), 2) AS failure_percent
+FROM per_job
+ORDER BY failure_percent DESC NULLS LAST, id;
+
+-- 16. Накопленные counters и checkpoint источников.
+SELECT s.name, state.current_mode, state.next_page, state.last_checkpoint_at,
+       state.total_questions_fetched, state.total_answers_fetched,
+       state.total_documents_inserted, state.total_documents_updated,
+       state.total_documents_unchanged, state.total_exact_duplicates,
+       state.total_items_skipped, state.total_errors, state.total_chunks_created
+FROM sources AS s
+LEFT JOIN source_sync_states AS state ON state.source_id = s.id
+ORDER BY s.name, s.id;

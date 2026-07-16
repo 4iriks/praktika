@@ -19,7 +19,14 @@ from app.core.enums import (
     WorkerInstanceStatus,
 )
 from app.db.models.content import Document
-from app.db.models.operations import Job, JobEvent, Source, SourceSyncState, WorkerInstance
+from app.db.models.operations import (
+    IngestionFailure,
+    Job,
+    JobEvent,
+    Source,
+    SourceSyncState,
+    WorkerInstance,
+)
 from app.db.repositories.jobs import (
     add_job_event,
     claim_next_job,
@@ -326,23 +333,69 @@ async def test_runner_process_once_completes_dry_run_and_stops_worker(
     assert worker.current_job_id is None
 
 
-async def test_runner_marks_unready_non_dry_handler_failed(db: AsyncSession) -> None:
+async def test_runner_ingests_non_dry_source_sync(db: AsyncSession) -> None:
     async with db.begin():
         source, job = await queue_runner_job(db, dry_run=False)
     runner = WorkerRunner(
         session_factory=SessionFactory,
         settings=worker_settings(),
-        instance_id="not-ready-worker",
+        instance_id="real-ingestion-worker",
     )
-    async with httpx.AsyncClient(transport=httpx.MockTransport(lambda request: None)) as client:
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/answers"):
+            items: list[dict[str, object]] = [
+                {
+                    "answer_id": 5501,
+                    "question_id": 501,
+                    "body": "<p>Используйте короткую транзакцию PostgreSQL.</p>",
+                    "creation_date": 1_700_000_200,
+                    "last_activity_date": 1_700_000_300,
+                    "score": 5,
+                    "is_accepted": True,
+                }
+            ]
+        else:
+            items = [
+                {
+                    "question_id": 501,
+                    "title": "Как сохранить документ Python?",
+                    "body": "<p>Нужен безопасный и повторяемый способ сохранить документ.</p>",
+                    "tags": ["python", "postgresql"],
+                    "link": "https://ru.stackoverflow.com/questions/501/example",
+                    "creation_date": 1_700_000_000,
+                    "last_activity_date": 1_700_000_100,
+                    "answer_count": 1,
+                    "accepted_answer_id": 5501,
+                    "is_answered": True,
+                }
+            ]
+        return httpx.Response(
+            200,
+            json={
+                "items": items,
+                "has_more": False,
+                "quota_max": 300,
+                "quota_remaining": 250,
+            },
+            request=request,
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
         assert await runner.process_once(client) == job.id
     await runner.close()
     async with SessionFactory() as session:
         stored = await session.get(Job, job.id)
         stored_source = await session.get(Source, source.id)
-    assert stored is not None and stored.status == JobStatus.FAILED
-    assert stored.error_code == "HANDLER_NOT_READY"
-    assert stored_source is not None and stored_source.status == "ERROR"
+        document = await session.scalar(
+            select(Document).where(Document.source_id == source.id, Document.external_id == "501")
+        )
+    assert stored is not None and stored.status == JobStatus.COMPLETED
+    assert stored.result["inserted"] == 1
+    assert stored.result["syncComplete"] is True
+    assert stored_source is not None and stored_source.status == "IDLE"
+    assert document is not None and document.processing_status == "CHUNKED"
+    assert document.bm25_status == document.vector_status == "NOT_INDEXED"
 
 
 async def test_idle_runner_heartbeats_and_shuts_down_gracefully(db: AsyncSession) -> None:
@@ -478,3 +531,54 @@ async def test_system_worker_status_uses_heartbeat(
     services = {item["id"]: item for item in online.json()["services"]}
     assert services["crawler"]["status"] == "ONLINE"
     assert services["crawler"]["version"] == "0.5.0"
+
+
+async def test_ingestion_operational_api_is_admin_only_and_sanitized(
+    client: httpx.AsyncClient,
+    db: AsyncSession,
+) -> None:
+    source = await db.scalar(select(Source).order_by(Source.id))
+    job = await db.scalar(select(Job).order_by(Job.id))
+    assert source is not None and job is not None
+    failure = IngestionFailure(
+        job_id=job.id,
+        source_id=source.id,
+        external_id="safe-501",
+        entity_type="QUESTION",
+        error_code="QUESTION_TOO_SHORT",
+        safe_message="Текст вопроса слишком короткий",
+        retryable=False,
+        attempt=1,
+        context={"page": 1, "password": "must-not-leak", "apiKey": "must-not-leak"},
+    )
+    db.add(failure)
+    await db.commit()
+
+    await login(client)
+    assert (await client.get("/api/admin/ingestion/stats")).status_code == 403
+    client.cookies.clear()
+    await login(client, "editor@pyanswer.local")
+    assert (await client.get("/api/admin/ingestion/failures")).status_code == 403
+
+    client.cookies.clear()
+    await login(client, "admin@pyanswer.local")
+    stats = await client.get("/api/admin/ingestion/stats")
+    assert stats.status_code == 200
+    assert stats.json()["documentsCount"] >= 0
+    assert "processingStatuses" in stats.json()
+    listed = await client.get(
+        "/api/admin/ingestion/failures",
+        params={"external_id": "safe-501", "page": 1, "limit": 1},
+    )
+    assert listed.status_code == 200
+    item = listed.json()["items"][0]
+    assert item["errorCode"] == "QUESTION_TOO_SHORT"
+    assert item["context"] == {"page": 1}
+    assert listed.json()["pagination"]["pageSize"] == 1
+    detail = await client.get(f"/api/admin/ingestion/failures/{failure.id}")
+    assert detail.status_code == 200 and detail.json()["context"] == {"page": 1}
+    invalid = await client.get(
+        "/api/admin/ingestion/failures",
+        params={"sort": "unsafe_sql"},
+    )
+    assert invalid.status_code == 422

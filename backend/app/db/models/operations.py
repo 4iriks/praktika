@@ -239,6 +239,7 @@ class SourceSyncState(Base):
     current_mode: Mapped[str | None] = mapped_column(String(16))
     last_checkpoint_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_seen_question_activity_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_seen_question_creation_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     total_questions_fetched: Mapped[int] = mapped_column(Integer, default=0)
     total_answers_fetched: Mapped[int] = mapped_column(Integer, default=0)
     total_documents_inserted: Mapped[int] = mapped_column(Integer, default=0)
@@ -247,6 +248,7 @@ class SourceSyncState(Base):
     total_exact_duplicates: Mapped[int] = mapped_column(Integer, default=0)
     total_items_skipped: Mapped[int] = mapped_column(Integer, default=0)
     total_errors: Mapped[int] = mapped_column(Integer, default=0)
+    total_chunks_created: Mapped[int] = mapped_column(Integer, default=0)
     last_job_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("jobs.id", ondelete="SET NULL"), index=True
     )
@@ -269,7 +271,8 @@ class SourceSyncState(Base):
             "total_questions_fetched >= 0 AND total_answers_fetched >= 0 "
             "AND total_documents_inserted >= 0 AND total_documents_updated >= 0 "
             "AND total_documents_unchanged >= 0 AND total_exact_duplicates >= 0 "
-            "AND total_items_skipped >= 0 AND total_errors >= 0",
+            "AND total_items_skipped >= 0 AND total_errors >= 0 "
+            "AND total_chunks_created >= 0",
             name="source_sync_state_counters_non_negative",
         ),
     )
@@ -352,6 +355,9 @@ class IngestionFailure(Base, UUIDPrimaryKeyMixin):
     source_id: Mapped[UUID] = mapped_column(
         ForeignKey("sources.id", ondelete="CASCADE"), index=True
     )
+    document_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("documents.id", ondelete="SET NULL"), index=True
+    )
     external_id: Mapped[str | None] = mapped_column(String(120), index=True)
     entity_type: Mapped[str] = mapped_column(String(40), index=True)
     error_code: Mapped[str] = mapped_column(String(80), index=True)
@@ -366,6 +372,7 @@ class IngestionFailure(Base, UUIDPrimaryKeyMixin):
 
     job: Mapped[Job] = relationship(back_populates="ingestion_failures")
     source: Mapped[Source] = relationship(back_populates="ingestion_failures")
+    document: Mapped[Document | None] = relationship(back_populates="ingestion_failures")
 
     __table_args__ = (
         CheckConstraint("length(entity_type) > 0", name="ingestion_failure_entity_not_empty"),

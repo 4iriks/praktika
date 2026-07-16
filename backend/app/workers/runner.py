@@ -4,7 +4,7 @@ import asyncio
 import logging
 import os
 import socket
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 import httpx
@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.core.config import Settings
 from app.core.enums import JobStatus, JobType, SourceStatus
 from app.db.base import utc_now
-from app.db.models.operations import Job, Source
+from app.db.models.operations import Job, Source, SourceSyncState
 from app.db.repositories.jobs import (
     cancel_job,
     claim_next_job,
@@ -196,6 +196,7 @@ class WorkerRunner:
                 source = await session.get(Source, job.source_id, with_for_update=True)
                 if source is not None:
                     self._update_source_after_job(source, job)
+                    await self._update_sync_completion(session, source, job)
 
     @staticmethod
     def _update_source_after_job(source: Source, job: Job) -> None:
@@ -203,6 +204,7 @@ class WorkerRunner:
             source.status = SourceStatus.IDLE
             source.current_job_id = None
             source.last_error = None
+            source.last_sync_at = job.finished_at
         elif job.status == JobStatus.CANCELLED:
             source.status = SourceStatus.PAUSED
             source.current_job_id = None
@@ -215,6 +217,40 @@ class WorkerRunner:
             source.status = SourceStatus.PAUSED
             source.current_job_id = job.id
             source.last_error = job.error_message
+
+    @staticmethod
+    async def _update_sync_completion(
+        session: AsyncSession,
+        source: Source,
+        job: Job,
+    ) -> None:
+        if job.status != JobStatus.COMPLETED or job.type != JobType.SOURCE_SYNC:
+            return
+        dry_run = job.result.get("dryRun") is True
+        if dry_run:
+            return
+        source.last_successful_sync_at = job.finished_at
+        state = await session.get(SourceSyncState, source.id, with_for_update=True)
+        if state is None:
+            return
+        if job.result.get("syncComplete") is not True:
+            return
+        fixed_todate = job.result.get("fixedTodate")
+        if type(fixed_todate) is not int or fixed_todate < 0:
+            return
+        completed_at = job.finished_at or utc_now()
+        mode = job.result.get("mode")
+        if mode == "INITIAL":
+            state.initial_sync_completed_at = completed_at
+        elif mode == "INCREMENTAL":
+            state.incremental_watermark = datetime.fromtimestamp(fixed_todate, UTC)
+        state.next_page = 1
+        state.current_mode = None
+        state.state = {
+            "fixedTodate": fixed_todate,
+            "itemOffset": 0,
+            "completedAt": completed_at.isoformat(),
+        }
 
     async def _heartbeat_loop(self) -> None:
         while not self._heartbeat_stop.is_set():

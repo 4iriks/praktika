@@ -125,6 +125,25 @@ class Settings(BaseSettings):
         default=30, ge=1, le=300, alias="WORKER_SHUTDOWN_TIMEOUT_SECONDS"
     )
 
+    document_revision_limit: int = Field(default=10, ge=1, le=100, alias="DOCUMENT_REVISION_LIMIT")
+    chunk_target_tokens: int = Field(default=650, ge=50, le=4000, alias="CHUNK_TARGET_TOKENS")
+    chunk_max_tokens: int = Field(default=900, ge=100, le=6000, alias="CHUNK_MAX_TOKENS")
+    chunk_overlap_tokens: int = Field(default=80, ge=0, le=500, alias="CHUNK_OVERLAP_TOKENS")
+    chunk_min_tokens: int = Field(default=40, ge=1, le=500, alias="CHUNK_MIN_TOKENS")
+    min_question_text_length: int = Field(
+        default=20, ge=1, le=1000, alias="MIN_QUESTION_TEXT_LENGTH"
+    )
+    min_answer_text_length: int = Field(default=1, ge=1, le=1000, alias="MIN_ANSWER_TEXT_LENGTH")
+    max_document_text_length: int = Field(
+        default=500_000, ge=1000, le=2_000_000, alias="MAX_DOCUMENT_TEXT_LENGTH"
+    )
+    max_answer_count_per_question: int = Field(
+        default=500, ge=1, le=5000, alias="MAX_ANSWER_COUNT_PER_QUESTION"
+    )
+    max_html_body_bytes: int = Field(
+        default=2_000_000, ge=1024, le=10_000_000, alias="MAX_HTML_BODY_BYTES"
+    )
+
     auth_rate_limit_requests: int = Field(
         default=10, ge=1, le=1000, alias="AUTH_RATE_LIMIT_REQUESTS"
     )
@@ -152,6 +171,12 @@ class Settings(BaseSettings):
             raise ValueError(
                 "STACKEXCHANGE_API_BASE_URL должен указывать на Stack Exchange API 2.3"
             )
+        if self.chunk_target_tokens > self.chunk_max_tokens:
+            raise ValueError("CHUNK_TARGET_TOKENS не может превышать CHUNK_MAX_TOKENS")
+        if self.chunk_overlap_tokens >= self.chunk_target_tokens:
+            raise ValueError("CHUNK_OVERLAP_TOKENS должен быть меньше CHUNK_TARGET_TOKENS")
+        if self.chunk_min_tokens > self.chunk_target_tokens:
+            raise ValueError("CHUNK_MIN_TOKENS не может превышать CHUNK_TARGET_TOKENS")
         return self
 
 

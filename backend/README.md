@@ -1,12 +1,12 @@
-# PyAnswer API — Этап 4 и подэтап 5.1
+# PyAnswer API — Этап 4 и подэтап 5.2
 
 FastAPI backend реализует серверную аутентификацию, пользовательский контур, RBAC, редакторские
 и административные операции PyAnswer. PostgreSQL является единственной runtime и integration
 test DB; SQLite не используется.
 
-Подэтап 5.1 расширяет backend durable очередью, отдельным worker и типизированным клиентом Stack
-Exchange. Это инфраструктурная часть Этапа 5: полный document processing pipeline появится в
-5.2.
+Подэтапы 5.1–5.2 расширяют backend durable очередью, отдельным worker, типизированным клиентом
+Stack Exchange и реальным document processing pipeline. UI и эксплуатационная приёмка Этапа 5
+завершаются в 5.3.
 
 ## Стек и структура
 
@@ -25,7 +25,8 @@ backend/
     db/repositories/  data access без решений о permissions
     integrations/     типизированные клиенты внешних API
     schemas/          camelCase Pydantic API schemas
-    services/         транзакционные бизнес-правила и audit
+    processing/       HTML cleaning, canonicalization, hashes и chunking
+    services/         транзакционные бизнес-правила, ingestion и audit
     seed/             идемпотентные bootstrap/demo seed функции
     scripts/          CLI entry points
     worker.py          отдельный lifecycle фонового worker
@@ -91,7 +92,8 @@ Seed не удаляет и не перезаписывает существую
 
 `downgrade -1` проверяется только на disposable test DB. Initial migration создаёт схему без seed
 и паролей; migration `20260716_0002` добавляет worker queue, source checkpoint, events и ingestion
-failures. Upgrade/downgrade транзакционны для PostgreSQL.
+failures. Migration `20260716_0003` добавляет processing/dedup fields, answer reconciliation,
+`document_revisions` и `document_chunks`. Upgrade/downgrade транзакционны для PostgreSQL.
 
 ## Worker и Stack Exchange
 
@@ -105,12 +107,24 @@ Stack Exchange client использует один `httpx.AsyncClient` на lif
 `Retry-After`, quota reserve, ограниченные retries и response size limit. Test connection делает
 один малый request и не сохраняет documents.
 
-На 5.1 `SOURCE_SYNC` предназначен для ограниченного dry-run/fetch/checkpoint сценария. Полная
-очистка, upsert documents/answers/tags, дедупликация и chunks появятся в 5.2. Подробности:
+На 5.2 `SOURCE_SYNC` выполняет INITIAL/INCREMENTAL загрузку, batch answers, очистку, upsert
+documents/answers/tags, exact deduplication, revisions и deterministic chunks. Dry-run остаётся
+доступным и изолирован от production sync state. Подробности:
 
 - [worker architecture](../docs/worker-architecture.md);
 - [Stack Exchange client](../docs/stackexchange-client.md);
-- [ingestion 5.1](../docs/stage5-ingestion.md).
+- [ingestion 5.2](../docs/stage5-ingestion.md);
+- [content cleaning](../docs/content-cleaning.md);
+- [chunking](../docs/chunking.md).
+
+Checkpoint фиксируется только после committed batch и содержит page + item offset. Это позволяет
+ограничить smoke-run внутри страницы из 100 вопросов без пропуска оставшихся элементов. Ошибка
+качества одного thread сохраняется в `ingestion_failures`; ошибка схемы/API/БД останавливает или
+ограниченно requeue всей job.
+
+Canonical content и metadata хешируются SHA-256 отдельно. Metadata-only update не создаёт новую
+revision/chunks. Смысловое изменение увеличивает document version. Успешная обработка оставляет
+BM25/vector в `NOT_INDEXED`/`OUTDATED`, никогда не имитируя готовый индекс.
 
 ## Security model
 
@@ -156,7 +170,7 @@ Structured access log не содержит cookies, Authorization или reques
 - user: `/api/users/me`, stats, history, saved, feedback, public document;
 - editor: dashboard, managed documents, metadata, hide/restore/reindex, bulk, jobs;
 - admin: dashboard, users, sources, jobs, audit, system/status/settings;
-- ingestion 5.1: source sync mode/limits, source checkpoint и read-only job events;
+- ingestion 5.2: source sync/checkpoint, read-only job events, stats и безопасные failures;
 - operations: `/api/health/live`, `/api/health/ready`;
 - placeholders: `/api/search` и `/api/ask` возвращают 501.
 
@@ -207,7 +221,7 @@ make COMPOSE=docker-compose worker-up
 
 ## Ограничения
 
-Подэтап 5.1 не является завершением Этапа 5 и не запускает полный импорт 25 000 документов.
+Подэтап 5.2 не является завершением Этапа 5 и не запускает полный импорт 25 000 документов.
 Qdrant, BM25, embeddings, HNSW, reranker, Ollama и RAG не настроены. `/api/search` и `/api/ask`
 не подменяют будущий движок SQL-поиском и продолжают возвращать 501. Frontend mock mode остаётся
 демонстрационным режимом по умолчанию.

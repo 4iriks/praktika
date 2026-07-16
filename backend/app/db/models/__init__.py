@@ -1,4 +1,11 @@
-from app.db.models.content import Answer, Document, DocumentTag, Tag
+from app.db.models.content import (
+    Answer,
+    Document,
+    DocumentChunk,
+    DocumentRevision,
+    DocumentTag,
+    Tag,
+)
 from app.db.models.identity import (
     Feedback,
     Role,
@@ -25,6 +32,8 @@ __all__ = [
     "Answer",
     "AuditEvent",
     "Document",
+    "DocumentChunk",
+    "DocumentRevision",
     "DocumentTag",
     "Feedback",
     "IngestionFailure",

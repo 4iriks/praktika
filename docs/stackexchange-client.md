@@ -1,4 +1,4 @@
-# Клиент Stack Exchange API — подэтап 5.1
+# Клиент Stack Exchange API — подэтапы 5.1–5.2
 
 Интеграция находится в отдельном backend layer и использует типизированные Pydantic DTO и один
 `httpx.AsyncClient` на lifecycle worker. HTTP-клиент не зависит от SQLAlchemy repositories и не
@@ -39,8 +39,9 @@ Iterator отдаёт страницы по мере получения, сле�
 разделённых точкой с запятой. Answers endpoint также проходит все страницы по `has_more`; один
 request на каждый вопрос не выполняется.
 
-На подэтапе 5.1 клиент проверяет wrapper и поддерживает fetch/checkpoint. Выбор corpus answers,
-очистка, canonical document и сохранение появятся в 5.2.
+На подэтапе 5.2 worker группирует полученные answers по question ID, детерминированно выбирает
+corpus answers и передаёт их processing service. Клиент по-прежнему не знает о SQLAlchemy и не
+держит транзакцию во время HTTP/pagination.
 
 ## Wrapper и ограничения
 

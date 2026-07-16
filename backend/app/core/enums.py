@@ -60,6 +60,37 @@ class IndexStatus(StrEnum):
     OUTDATED = "OUTDATED"
 
 
+class ProcessingStatus(StrEnum):
+    RAW = "RAW"
+    CLEANING = "CLEANING"
+    CLEANED = "CLEANED"
+    CHUNKING = "CHUNKING"
+    CHUNKED = "CHUNKED"
+    FAILED = "FAILED"
+
+
+class DeduplicationStatus(StrEnum):
+    UNIQUE = "UNIQUE"
+    EXACT_DUPLICATE = "EXACT_DUPLICATE"
+    POSSIBLE_DUPLICATE = "POSSIBLE_DUPLICATE"
+
+
+class ChunkSectionType(StrEnum):
+    QUESTION = "QUESTION"
+    ACCEPTED_ANSWER = "ACCEPTED_ANSWER"
+    ANSWER = "ANSWER"
+    MIXED = "MIXED"
+
+
+class IngestionResultStatus(StrEnum):
+    INSERTED = "INSERTED"
+    UPDATED = "UPDATED"
+    UNCHANGED = "UNCHANGED"
+    DUPLICATE = "DUPLICATE"
+    SKIPPED = "SKIPPED"
+    FAILED = "FAILED"
+
+
 class SourceType(StrEnum):
     STACK_EXCHANGE = "STACK_EXCHANGE"
 

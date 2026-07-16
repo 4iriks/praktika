@@ -25,6 +25,7 @@ class SourceSyncStateOut(ApiModel):
     current_mode: SourceSyncMode | None = None
     last_checkpoint_at: datetime | None = None
     last_seen_question_activity_at: datetime | None = None
+    last_seen_question_creation_at: datetime | None = None
     total_questions_fetched: int
     total_answers_fetched: int
     total_documents_inserted: int
@@ -33,6 +34,7 @@ class SourceSyncStateOut(ApiModel):
     total_exact_duplicates: int
     total_items_skipped: int
     total_errors: int
+    total_chunks_created: int
     last_job_id: UUID | None = None
     state: dict[str, object]
     created_at: datetime
@@ -52,4 +54,45 @@ class JobEventOut(ApiModel):
 
 class JobEventsResponse(ApiModel):
     items: list[JobEventOut]
+    pagination: Pagination
+
+
+class IngestionStatsOut(ApiModel):
+    documents_count: int
+    answers_count: int
+    chunks_count: int
+    revisions_count: int
+    failures_count: int
+    unresolved_failures_count: int
+    processing_statuses: dict[str, int]
+    deduplication_statuses: dict[str, int]
+    total_questions_fetched: int
+    total_answers_fetched: int
+    total_documents_inserted: int
+    total_documents_updated: int
+    total_documents_unchanged: int
+    total_exact_duplicates: int
+    total_items_skipped: int
+    total_errors: int
+    total_chunks_created: int
+
+
+class IngestionFailureOut(ApiModel):
+    id: UUID
+    job_id: UUID
+    source_id: UUID
+    document_id: UUID | None = None
+    external_id: str | None = None
+    entity_type: str
+    error_code: str
+    safe_message: str
+    retryable: bool
+    attempt: int
+    context: dict[str, object]
+    created_at: datetime
+    resolved_at: datetime | None = None
+
+
+class IngestionFailuresResponse(ApiModel):
+    items: list[IngestionFailureOut]
     pagination: Pagination

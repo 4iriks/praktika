@@ -2,7 +2,7 @@
 
 Base URL: `/api`. JSON fields используют camelCase, Python и PostgreSQL — snake_case.
 
-Подэтап 5.1 расширяет существующий контракт operational-полями worker и ingestion. Старые
+Подэтапы 5.1–5.2 расширяют существующий контракт operational-полями worker и ingestion. Старые
 auth/user/editor/admin методы сохраняют обратную совместимость.
 
 ## Cookie и CSRF flow
@@ -85,13 +85,16 @@ Reindex только создаёт `QUEUED` job; indexer не запускае�
 - audit: read-only list/detail;
 - system: status/health-check/settings.
 
-### Ingestion 5.1
+### Ingestion 5.2
 
 - `POST /admin/sources/{sourceId}/test` выполняет один малый Stack Exchange request и не создаёт
   job или document;
 - `POST /admin/sources/{sourceId}/sync` только создаёт durable `SOURCE_SYNC` job;
 - `POST /admin/sources/{sourceId}/stop` идемпотентно запрашивает cancellation, не убивая worker;
 - `GET /admin/jobs/{jobId}/events` возвращает безопасную timeline событий.
+- `GET /admin/sources/{sourceId}/sync-state` возвращает durable counters/checkpoint;
+- `GET /admin/ingestion/stats` возвращает SQL aggregates документов, ответов, chunks/revisions;
+- `GET /admin/ingestion/failures` и `/{failureId}` возвращают только sanitized diagnostics.
 
 Пример тела start sync:
 
@@ -105,8 +108,10 @@ Reindex только создаёт `QUEUED` job; indexer не запускае�
 ```
 
 `mode` принимает `AUTO`, `INITIAL` или `INCREMENTAL`. Limits имеют серверные maximum. Поля можно
-опустить для configured source defaults, но полный import не запускается автоматически. На 5.1
+опустить для configured source defaults, но полный import не запускается автоматически.
 `dryRun=true` выполняет fetch/checkpoint без сохранения documents и без завершения initial sync.
+При `dryRun=false` worker сохраняет threads; capped run сохраняет page/item offset и не объявляет
+snapshot завершённым, если остались элементы.
 
 Job response сохраняет прежние поля и дополнительно может содержать:
 
@@ -130,7 +135,7 @@ API key, raw wrapper и response body не возвращаются.
 - `POST /ask` — HTTP 501 до Этапа 6.
 
 Worker не меняет контракт search/ask: ingestion и поисковая индексация являются разными
-этапами. `SOURCE_SYNC` на 5.1 не устанавливает BM25/vector status в `READY`.
+этапами. `SOURCE_SYNC` на 5.2 не устанавливает BM25/vector status в `READY`.
 
 ## 401 handling frontend
 

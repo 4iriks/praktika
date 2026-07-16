@@ -1,65 +1,71 @@
-# PyAnswer — Этап 5, подэтап 5.1
+# PyAnswer — Этап 5, подэтапы 5.1–5.2
 
-Подэтап 5.1 создаёт инфраструктуру будущей загрузки Stack Overflow на русском. Он не завершает
-весь Этап 5 и не запускает полный импорт корпуса.
+Подэтап 5.1 добавил durable PostgreSQL queue, отдельный worker и типизированный Stack Exchange
+client. Подэтап 5.2 завершает реальный `SOURCE_SYNC`: вопросы, ответы, теги, ревизии и чанки
+сохраняются в PostgreSQL. Полный импорт 25 000 веток по-прежнему не запускается автоматически.
 
-## Реализуемая граница 5.1
+## Поток данных
 
-- PostgreSQL-backed durable job queue;
-- отдельный worker process;
-- atomic claim через `FOR UPDATE SKIP LOCKED`;
-- lease, heartbeat, stale recovery и graceful shutdown;
-- cancellation, checkpoint, retry schedule и job events;
-- типизированный Stack Exchange client;
-- questions/answers pagination, rate limit, backoff и quota;
-- source test connection;
-- ограниченный `SOURCE_SYNC` dry-run/fetch-only flow;
-- Docker worker service.
+1. ADMIN создаёт `SOURCE_SYNC`; HTTP endpoint только фиксирует job и audit.
+2. Worker атомарно захватывает job через `FOR UPDATE SKIP LOCKED` и выполняет сеть вне DB
+   transaction.
+3. Для страницы до 100 вопросов клиент пакетно получает все страницы ответов.
+4. Каждый thread очищается, нормализуется и сохраняется короткой транзакцией.
+5. После committed batch worker обновляет counters, `source_sync_states` и job checkpoint.
+6. Cancellation, quota pause или restart продолжаются с последнего checkpoint. Для ограничения
+   внутри страницы сохраняется `itemOffset`, поэтому документы не пропускаются.
 
-Полный production handler, HTML cleaning, answer selection, deduplication, revisions и chunks
-будут добавлены в 5.2. На 5.1 dry-run не сохраняет documents и не завершает initial sync.
+## Initial и incremental
 
-## Миграция
+`AUTO` выбирает `INITIAL`, пока `initial_sync_completed_at` пуст, затем `INCREMENTAL`.
 
-Ревизия `20260716_0002` следует за Stage 4 revision `20260715_0001`. Она расширяет `jobs`, делает
-неизвестный Stack Exchange quota reset nullable, добавляет время quota update и создаёт:
+- INITIAL: `sort=creation`, `order=desc`, фиксированный `todate`, продолжение по page/offset до
+  target, конца API или явно заданного безопасного cap.
+- INCREMENTAL: `sort=activity`, `fromdate = watermark - overlap`, фиксированный `todate`.
+- Watermark и признак завершения initial обновляются в той же финальной транзакции, где job
+  становится `COMPLETED`. FAILED/CANCELLED job их не продвигает.
+- Ограниченный успешный запуск сохраняет checkpoint, но не объявляет весь snapshot завершённым.
+- Dry-run сохраняет только job checkpoint и никогда не меняет production sync state.
 
-- `source_sync_states`;
-- `worker_instances`;
-- `job_events`;
-- `ingestion_failures`.
+## Обработка thread
 
-Миграция сохраняет существующие Stage 4 jobs и partial unique правила активных заданий.
-Downgrade проверяется только на disposable PostgreSQL.
+Pipeline выполняет parser-based HTML cleaning, сохраняет fenced code blocks, выбирает accepted и
+до трёх дополнительных ответов, строит canonical document и два SHA-256 hash. Identity
+`source_id + external_id` обеспечивает upsert, одинаковый canonical content помечается как
+`EXACT_DUPLICATE` без физического удаления.
 
-## Режимы sync
+Смысловое изменение увеличивает `documents.version`, создаёт `document_revisions` и атомарно
+заменяет `document_chunks`. Metadata-only изменение не пересоздаёт revision/chunks. Отсутствующий
+ранее известный answer помечается `source_missing`, но не удаляется.
 
-- `AUTO` выбирает initial, пока первоначальная загрузка не завершена, затем incremental;
-- `INITIAL` использует `sort=creation`, descending order и фиксированный `todate`;
-- `INCREMENTAL` использует `sort=activity`, watermark minus overlap и фиксированный `todate`.
+## Processing и индексы
 
-В 5.1 полностью поддерживается безопасно ограниченный dry-run. Dry-run checkpoint изолирован от
-production source state и не обновляет `initial_sync_completed_at` или incremental watermark.
+Технические состояния: `RAW`, `CLEANING`, `CLEANED`, `CHUNKING`, `CHUNKED`, `FAILED`.
+Дедупликация: `UNIQUE`, `EXACT_DUPLICATE`, `POSSIBLE_DUPLICATE`.
 
-Запрос создания job может включать `mode`, `maxDocuments`, `maxPages` и `dryRun`. Endpoint только
-создаёт DB job; HTTP request не выполняет загрузку.
+Успешный ingestion выставляет BM25/vector только в `NOT_INDEXED` или `OUTDATED`. Значение
+`READY` не используется без реального индекса Этапа 6. `/api/search` и `/api/ask` в HTTP mode
+продолжают честно возвращать 501.
 
-## Lifecycle SOURCE_SYNC
+## Failure isolation
 
-1. ADMIN создаёт job для enabled source.
-2. Partial unique index блокирует вторую активную job.
-3. Worker атомарно выполняет claim.
-4. Клиент получает page questions и batch pages answers без открытой DB transaction.
-5. Worker фиксирует counters/event/checkpoint безопасной единицей.
-6. Cancellation или quota pause сохраняет последний успешный checkpoint.
-7. Retry продолжает с checkpoint; stale lease восстанавливается ограниченно.
+Ошибка качества отдельного thread сохраняется в `ingestion_failures` с безопасным кодом и не
+останавливает страницу. Ошибка клиента, схемы API или PostgreSQL завершает/requeues всю job по
+типизированным правилам. Raw HTML, API key и полный API wrapper в failures/events не сохраняются.
 
-`COMPLETED` не означает созданный поисковый индекс. BM25/vector statuses не переводятся в READY.
+Operational API:
 
-## Запуск development окружения
+- `GET /api/admin/sources/{sourceId}/sync-state`;
+- `GET /api/admin/ingestion/stats`;
+- `GET /api/admin/ingestion/failures`;
+- `GET /api/admin/ingestion/failures/{failureId}`;
+- ADMIN/EDITOR job events согласно существующим permissions.
 
-Создайте `.env` из примера и задайте собственный PostgreSQL password. Stack Exchange key можно
-оставить пустым.
+## Проверки и запуск
+
+Обычные tests используют реальный disposable PostgreSQL и mocked HTTP. Они проверяют очистку,
+selection, hashes, дедупликацию, revisions, deterministic chunks, initial/incremental,
+page-offset resume, cancellation и failure isolation.
 
 ```bash
 make backend-migrate
@@ -68,24 +74,5 @@ make worker-health
 make worker-logs
 ```
 
-Для Compose V1 команда задаётся явно:
-
-```bash
-make COMPOSE=docker-compose worker-up
-```
-
-## Проверки
-
-Обычные tests используют mocked HTTP. Проверяются atomic claim, competing workers, lease,
-heartbeat, stale recovery, cancellation, partial unique indexes, pagination, batching до 100 ID,
-backoff, Retry-After, quota reserve, response size и отсутствие key в диагностике.
-
-Полный импорт 25 000 веток не является проверкой 5.1 и автоматически не запускается.
-
-## Честные ограничения
-
-- документы, revisions и chunks появятся в 5.2;
-- worker не создаёт BM25/vector индекс;
-- Qdrant, embeddings, HNSW, reranker и Ollama отсутствуют;
-- `/api/search` и `/api/ask` в HTTP mode продолжают возвращать 501;
-- mock frontend search продолжает работать независимо от ingestion.
+Live/full import не является автоматической проверкой 5.2. UI-интеграция, capped live smoke и
+полный runbook завершаются в подэтапе 5.3.
