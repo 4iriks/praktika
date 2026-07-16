@@ -85,7 +85,7 @@ npm run format:check
 - [API contract](docs/api-contract.md);
 - [SQL-примеры](docs/sql_examples.sql);
 - сохранённые задания: [Этап 4](docs/prompts/stage-4.md) и
-  [полученная часть Этапа 5](docs/prompts/stage-5.md).
+  [полный комплект Этапа 5](docs/prompts/stage-5.md) с отдельными промтами 5.1–5.3.
 
 ## Границы Этапа 4
 
