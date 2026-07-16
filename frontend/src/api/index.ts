@@ -3,7 +3,12 @@ import { httpApi } from './httpApi';
 import { mockApi } from '../mocks/mockApi';
 
 export const useMocks = import.meta.env.VITE_USE_MOCKS !== 'false';
-export const api: ApiClient = useMocks ? mockApi : httpApi;
+
+export function selectApiClient(mockMode: boolean): ApiClient {
+  return mockMode ? mockApi : httpApi;
+}
+
+export const api: ApiClient = selectApiClient(useMocks);
 
 export { ApiError } from './ApiError';
 export type { ApiClient } from './types';

@@ -1,0 +1,72 @@
+name: pyanswer
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-pyanswer}
+      POSTGRES_USER: ${POSTGRES_USER:-pyanswer}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+      POSTGRES_INITDB_ARGS: --encoding=UTF8 --locale=C.UTF-8
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 25s
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      APP_NAME: ${APP_NAME:-PyAnswer API}
+      APP_VERSION: ${APP_VERSION:-0.4.0}
+      DEBUG: ${DEBUG:-false}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-pyanswer}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-pyanswer}
+      FRONTEND_ORIGINS: ${FRONTEND_ORIGINS:-["http://localhost:5173"]}
+      SESSION_COOKIE_NAME: ${SESSION_COOKIE_NAME:-pyanswer_session}
+      CSRF_COOKIE_NAME: ${CSRF_COOKIE_NAME:-pyanswer_csrf}
+      SESSION_TTL_HOURS: ${SESSION_TTL_HOURS:-12}
+      REMEMBER_SESSION_TTL_DAYS: ${REMEMBER_SESSION_TTL_DAYS:-30}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      COOKIE_SAMESITE: ${COOKIE_SAMESITE:-lax}
+      ARGON2_TIME_COST: ${ARGON2_TIME_COST:-3}
+      ARGON2_MEMORY_COST: ${ARGON2_MEMORY_COST:-65536}
+      ARGON2_PARALLELISM: ${ARGON2_PARALLELISM:-2}
+      BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-}
+      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}
+      BOOTSTRAP_ADMIN_NAME: ${BOOTSTRAP_ADMIN_NAME:-Администратор}
+      SEED_DEMO_DATA: ${SEED_DEMO_DATA:-false}
+      STACK_EXCHANGE_SITE: ${STACK_EXCHANGE_SITE:-ru.stackoverflow}
+      STACK_EXCHANGE_TAG: ${STACK_EXCHANGE_TAG:-python}
+      STACK_EXCHANGE_TARGET_DOCUMENTS: ${STACK_EXCHANGE_TARGET_DOCUMENTS:-25000}
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health/ready', timeout=3)",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+volumes:
+  postgres_data:

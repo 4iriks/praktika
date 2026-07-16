@@ -55,64 +55,127 @@ const baseUrl = (import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/api
   '',
 );
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+interface BackendErrorPayload {
+  error?: {
+    code?: unknown;
+    message?: unknown;
+    details?: unknown;
+    requestId?: unknown;
+  };
+  code?: unknown;
+  message?: unknown;
+  details?: unknown;
+  requestId?: unknown;
+}
+
+interface CsrfPayload {
+  csrfToken: string;
+}
+
+const unsafeMethods = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+const apiErrorCodes = new Set([
+  'BAD_REQUEST',
+  'UNAUTHORIZED',
+  'FORBIDDEN',
+  'CSRF_INVALID',
+  'NOT_FOUND',
+  'CONFLICT',
+  'VALIDATION_ERROR',
+  'RATE_LIMITED',
+  'SERVICE_UNAVAILABLE',
+  'SEARCH_ENGINE_NOT_READY',
+  'RAG_ENGINE_NOT_READY',
+  'INTERNAL_ERROR',
+]);
+let csrfToken: string | null = null;
+const unauthorizedListeners = new Set<() => void>();
+
+export function subscribeToUnauthorized(listener: () => void): () => void {
+  unauthorizedListeners.add(listener);
+  return () => unauthorizedListeners.delete(listener);
+}
+
+function notifyUnauthorized(): void {
+  unauthorizedListeners.forEach((listener) => listener());
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+async function responseError(response: Response): Promise<ApiError> {
+  let message = response.statusText || 'Сервис временно недоступен.';
+  let code: ConstructorParameters<typeof ApiError>[2];
+  let details: ConstructorParameters<typeof ApiError>[3];
+  let requestId: string | undefined;
+  try {
+    const payload = (await response.json()) as BackendErrorPayload;
+    const envelope = isObject(payload.error) ? payload.error : payload;
+    if (typeof envelope.message === 'string') message = envelope.message;
+    if (typeof envelope.code === 'string' && apiErrorCodes.has(envelope.code)) {
+      code = envelope.code as ConstructorParameters<typeof ApiError>[2];
+    }
+    if (isObject(envelope.details)) {
+      details = envelope.details as ConstructorParameters<typeof ApiError>[3];
+    }
+    if (typeof envelope.requestId === 'string') requestId = envelope.requestId;
+  } catch {
+    // A non-JSON gateway error still becomes the same typed ApiError.
+  }
+  return new ApiError(message, response.status, code, details, requestId);
+}
+
+async function refreshCsrf(signal?: AbortSignal): Promise<string> {
+  const response = await fetch(baseUrl + '/auth/csrf', {
+    credentials: 'include',
+    headers: { Accept: 'application/json' },
+    signal,
+  });
+  if (!response.ok) throw await responseError(response);
+  const payload = (await response.json()) as CsrfPayload;
+  if (typeof payload.csrfToken !== 'string' || !payload.csrfToken) {
+    throw new ApiError('Сервис вернул некорректный CSRF-токен.', 500, 'INTERNAL_ERROR');
+  }
+  csrfToken = payload.csrfToken;
+  return csrfToken;
+}
+
+async function request<T>(path: string, init: RequestInit = {}, csrfRetried = false): Promise<T> {
+  const method = (init.method ?? 'GET').toUpperCase();
+  const unsafe = unsafeMethods.has(method);
+  const token = unsafe ? (csrfToken ?? (await refreshCsrf(init.signal ?? undefined))) : null;
   const response = await fetch(baseUrl + path, {
     credentials: 'include',
     ...init,
     headers: {
       Accept: 'application/json',
       ...(init.body ? { 'Content-Type': 'application/json' } : {}),
+      ...(token ? { 'X-CSRF-Token': token } : {}),
       ...init.headers,
     },
   });
 
   if (!response.ok) {
-    let message = 'Сервис временно недоступен.';
-    let code: ConstructorParameters<typeof ApiError>[2];
-    let details: ConstructorParameters<typeof ApiError>[3];
-    try {
-      const payload: unknown = await response.json();
-      if (
-        typeof payload === 'object' &&
-        payload !== null &&
-        'message' in payload &&
-        typeof payload.message === 'string'
-      ) {
-        message = payload.message;
-      }
-      if (
-        typeof payload === 'object' &&
-        payload !== null &&
-        'code' in payload &&
-        [
-          'BAD_REQUEST',
-          'UNAUTHORIZED',
-          'FORBIDDEN',
-          'NOT_FOUND',
-          'CONFLICT',
-          'VALIDATION_ERROR',
-          'INTERNAL_ERROR',
-        ].includes(String(payload.code))
-      ) {
-        code = payload.code as ConstructorParameters<typeof ApiError>[2];
-      }
-      if (
-        typeof payload === 'object' &&
-        payload !== null &&
-        'details' in payload &&
-        typeof payload.details === 'object' &&
-        payload.details !== null
-      ) {
-        details = payload.details as ConstructorParameters<typeof ApiError>[3];
-      }
-    } catch {
-      message = response.statusText || message;
+    const error = await responseError(response);
+    if (unsafe && error.code === 'CSRF_INVALID' && !csrfRetried) {
+      csrfToken = null;
+      await refreshCsrf(init.signal ?? undefined);
+      return request<T>(path, init, true);
     }
-    throw new ApiError(message, response.status, code, details);
+    if (response.status === 401) notifyUnauthorized();
+    throw error;
   }
 
+  if (path === '/auth/login' || path === '/auth/register' || path === '/auth/logout') {
+    csrfToken = null;
+  }
   if (response.status === 204) return undefined as T;
   return (await response.json()) as T;
+}
+
+export function resetHttpSecurityStateForTests(): void {
+  csrfToken = null;
+  unauthorizedListeners.clear();
 }
 
 function searchQuery(value: SearchRequest): string {

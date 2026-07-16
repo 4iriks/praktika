@@ -7,9 +7,9 @@ PyAnswer — локальная интеллектуальная поисков�
 - редакторский: документы → metadata/moderation → reindex → jobs;
 - административный: users → sources → jobs → audit → system/settings.
 
-Этап 3 остаётся полностью frontend/mock-реализацией. В репозитории нет FastAPI, PostgreSQL,
-Qdrant, Ollama, crawler или настоящего indexer. Все management-операции проходят через единый
-типизированный API adapter и реально изменяют server-like mock repository.
+Frontend Этапа 3 сохраняет полноценный mock-режим. На Этапе 4 в репозитории добавлены FastAPI и
+PostgreSQL: при `VITE_USE_MOCKS=false` тот же типизированный adapter использует серверные auth,
+user, editor и admin API. Qdrant, Ollama, crawler и настоящий indexer пока не реализованы.
 
 ## Стек
 
@@ -102,8 +102,8 @@ ADMIN routes:
 `status=403`, `code=FORBIDDEN`, `message` и опциональными `details`. HTTP adapter ожидает тот же
 формат для 400/401/403/404/409/422/500.
 
-Frontend RBAC не является production-защитой. Будущий FastAPI обязан заново аутентифицировать
-actor и проверять каждое permission на сервере, не доверяя роли, URL или payload браузера.
+Frontend RBAC не является production-защитой. Реализованный FastAPI заново аутентифицирует actor
+по server-side session и проверяет каждое permission, не доверяя роли, URL или payload браузера.
 
 ## Mock credentials, сессия и migration
 
@@ -235,10 +235,11 @@ Query key factories разделяют public/user/editor/admin server state. П
 `EditorDashboard`, `AdminUser`, `Source`, `BackgroundJob`, `AuditEvent`, `SystemService`,
 `SystemStatus`, `SystemSettings`, `AdminDashboard`, `JsonValue` и `JsonObject`.
 
-## API contract и будущий FastAPI
+## API contract и FastAPI Этапа 4
 
 Страницы не вызывают `fetch`: только `api` из `src/api`. HTTP adapter всегда использует
-`credentials: 'include'` и не создаёт Authorization/Bearer header.
+`credentials: 'include'`, получает CSRF token перед mutation и повторяет запрос после безопасной
+CSRF rotation не более одного раза. Authorization/Bearer header отсутствует.
 
 Editor endpoints:
 
@@ -265,14 +266,11 @@ Admin endpoints:
 `/history`, `/saved`, `/feedback`) сохранены. Публичный технический status использует
 `getPublicSystemStatus`, административный — отдельный `getSystemStatus`.
 
-Для подключения FastAPI:
-
-1. реализовать JSON-контракты из `src/types` и одинаковый `ApiError`;
-2. повторить permission matrix и business invariants на сервере;
-3. хранить Argon2 credentials и audit только на сервере;
-4. выдавать HttpOnly cookie и настроить credentialed CORS для точного origin;
-5. установить `VITE_USE_MOCKS=false` и `VITE_API_BASE_URL`;
-6. пересобрать frontend.
+FastAPI Этапа 4 реализует эти JSON-контракты, единый error envelope, серверную permission matrix,
+Argon2id, audit в PostgreSQL, HttpOnly session cookie и credentialed CORS. Для HTTP-режима нужно
+установить `VITE_USE_MOCKS=false`, оставить `VITE_API_BASE_URL=http://localhost:8000/api` и
+пересобрать frontend. `/api/search` и `/api/ask` до Этапа 6 возвращают честный 501, поэтому
+демонстрационный поиск по умолчанию остаётся в mock-режиме.
 
 Браузер никогда не вызывает Ollama напрямую.
 
@@ -281,7 +279,7 @@ Admin endpoints:
 | Переменная              | Default                     | Назначение                      |
 | ----------------------- | --------------------------- | ------------------------------- |
 | `VITE_USE_MOCKS`        | `true`                      | выбор mock или HTTP adapter     |
-| `VITE_API_BASE_URL`     | `http://localhost:8000/api` | будущий FastAPI base URL        |
+| `VITE_API_BASE_URL`     | `http://localhost:8000/api` | FastAPI base URL                |
 | `VITE_MOCK_FORCE_ERROR` | `false`                     | принудительный mock error state |
 
 `.env.example` не содержит секретов.
@@ -296,4 +294,5 @@ docker run --rm -p 8080:80 pyanswer-frontend
 ```
 
 Multi-stage image собирает Vite bundle и отдаёт его через nginx. Конфигурация сохраняет React
-Router fallback, immutable assets cache и `/healthz`. Полного Docker Compose на Этапе 3 нет.
+Router fallback, immutable assets cache и `/healthz`. Корневой `compose.yaml` Этапа 4 добавляет
+PostgreSQL и backend; frontend image остаётся самостоятельным и не включён в compose этого этапа.

@@ -1,6 +1,7 @@
-import { useCallback, useMemo, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, type ReactNode } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../api';
+import { subscribeToUnauthorized } from '../../api/httpApi';
 import { clearUserQueryCache } from '../../api/queryCache';
 import { queryKeys } from '../../api/queryKeys';
 import type { AuthStatus, LoginRequest, RegisterRequest, User } from '../../types';
@@ -18,6 +19,15 @@ export function AuthProvider({ children }: AuthProviderProps) {
     staleTime: Number.POSITIVE_INFINITY,
     retry: false,
   });
+
+  useEffect(
+    () =>
+      subscribeToUnauthorized(() => {
+        clearUserQueryCache(queryClient);
+        queryClient.setQueryData(queryKeys.auth.current, null);
+      }),
+    [queryClient],
+  );
 
   const setAuthenticatedUser = useCallback(
     (user: User) => {

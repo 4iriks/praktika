@@ -1,0 +1,172 @@
+# PyAnswer API — Этап 4
+
+FastAPI backend реализует серверную аутентификацию, пользовательский контур, RBAC, редакторские
+и административные операции PyAnswer. PostgreSQL является единственной runtime и integration
+test DB; SQLite не используется.
+
+## Стек и структура
+
+- Python 3.12, FastAPI, Pydantic v2 и pydantic-settings;
+- async SQLAlchemy 2.x, asyncpg, PostgreSQL 16 и Alembic;
+- Argon2id (`argon2-cffi`), opaque server-side sessions, HttpOnly-cookie и CSRF;
+- httpx для ограниченной проверки Stack Exchange source;
+- Ruff, strict mypy, pytest, pytest-asyncio и coverage.
+
+```text
+backend/
+  app/
+    api/              dependencies, errors, pagination и тонкие routes
+    core/             config, security, permissions, CSRF, middleware, logging
+    db/models/        SQLAlchemy models
+    db/repositories/  data access без решений о permissions
+    schemas/          camelCase Pydantic API schemas
+    services/         транзакционные бизнес-правила и audit
+    seed/             идемпотентные bootstrap/demo seed функции
+    scripts/          CLI entry points
+  alembic/            async environment и начальная migration
+  tests/unit/         чистая security/domain логика
+  tests/integration/  реальные PostgreSQL HTTP/service scenarios
+```
+
+## Environment
+
+Скопируйте `.env.example` в `.env` и замените placeholders. Обязательные группы:
+
+- приложение: `APP_ENV`, `APP_NAME`, `APP_VERSION`, `DEBUG`, `DOCS_ENABLED`;
+- БД: `DATABASE_URL`, отдельный `TEST_DATABASE_URL`;
+- CORS: JSON-массив `FRONTEND_ORIGINS` без wildcard;
+- cookie/session: имена cookie, TTL, `COOKIE_SECURE`, `COOKIE_SAMESITE`;
+- Argon2: time/memory/parallelism cost;
+- bootstrap: admin email/name/password из окружения;
+- seed/source: `SEED_DEMO_DATA`, site, tag и target documents;
+- rate limit: число auth attempts и окно.
+
+Production-конфигурация отклоняет insecure cookie, default database credentials и включённый
+demo seed. Настоящие пароли и `.env` не коммитятся.
+
+## Локальная установка
+
+```bash
+python3.12 -m venv .venv
+.venv/bin/python -m pip install -e ".[dev]"
+```
+
+Запустите PostgreSQL и укажите asyncpg URL:
+
+```bash
+export DATABASE_URL='postgresql+asyncpg://pyanswer:your-password@localhost:5432/pyanswer'
+.venv/bin/alembic upgrade head
+.venv/bin/python -m app.scripts.bootstrap
+.venv/bin/uvicorn app.main:app --reload
+```
+
+Bootstrap идемпотентно создаёт roles, permissions, role-permission matrix, singleton system
+settings, основной source и опционального admin из environment. Development seed запускается
+отдельно:
+
+```bash
+SEED_DEMO_DATA=true .venv/bin/python -m app.scripts.seed_demo
+```
+
+Seed не удаляет и не перезаписывает существующих пользователей. Он создаёт три demo account,
+10 synthetic users, 20 документов с ответами/тегами, history, saved, feedback, jobs и audit.
+
+## Миграции
+
+```bash
+.venv/bin/alembic upgrade head
+.venv/bin/alembic current
+.venv/bin/alembic history
+.venv/bin/alembic check
+```
+
+`downgrade -1` проверяется только на disposable test DB. Initial migration создаёт схему без seed
+и паролей; upgrade/downgrade транзакционны для PostgreSQL.
+
+## Security model
+
+### Passwords
+
+Сервер повторно проверяет policy: не менее 8 символов, одна lowercase, uppercase и цифра. Raw
+password живёт только в request/service call, не сохраняется и не логируется. В `users` хранится
+Argon2id hash; API, ADMIN response и audit его никогда не возвращают. После успешного login
+поддерживается rehash при изменении параметров Argon2.
+
+### Sessions и CSRF
+
+Login генерирует случайные session и CSRF tokens. PostgreSQL хранит только SHA-256 hashes.
+Session reference отправляется в `HttpOnly`, `SameSite` cookie; CSRF token — в readable cookie и
+response `/api/auth/csrf`. Unsafe запрос отправляет `X-CSRF-Token`. Middleware проверяет
+double-submit, а dependency для authenticated mutation дополнительно сравнивает token hash с
+session record.
+
+Session отклоняется, если она expired/revoked, user BLOCKED или `session.account_version` не
+совпадает с user. Role change/block увеличивают account version и отзывают целевые sessions.
+Logout требует CSRF, отзывает запись и удаляет обе cookie.
+
+### RBAC
+
+Permissions загружаются только по цепочке `session → user → role → role_permissions`. Role,
+permission, query/header/payload клиента не считаются доверенными. USER получает search/profile/
+history/saved; EDITOR наследует USER и управляет документами; ADMIN наследует обе группы и
+управляет users/sources/jobs/audit/system.
+
+Self-role-change и self-block запрещены. Изменение ADMIN выполняется под PostgreSQL advisory
+transaction lock и row lock, поэтому concurrent requests не могут обойти правило активного
+администратора. Успешная операция и audit фиксируются одной request transaction.
+
+### HTTP boundary
+
+CORS разрешает только `FRONTEND_ORIGINS` с credentials. Каждый response содержит request ID и
+security headers. Ошибки имеют безопасный envelope; production не возвращает stack traces.
+Structured access log не содержит cookies, Authorization или request body.
+
+## Основные API
+
+- auth: `/api/auth/csrf`, register, login, logout, me;
+- user: `/api/users/me`, stats, history, saved, feedback, public document;
+- editor: dashboard, managed documents, metadata, hide/restore/reindex, bulk, jobs;
+- admin: dashboard, users, sources, jobs, audit, system/status/settings;
+- operations: `/api/health/live`, `/api/health/ready`;
+- placeholders: `/api/search` и `/api/ask` возвращают 501.
+
+Полный flow и список routes находятся в [docs/api-contract.md](../docs/api-contract.md). OpenAPI
+доступен в development по `/api/docs`; production может отключить его.
+
+## Тесты
+
+Integration tests требуют отдельный PostgreSQL URL, содержащий `test`. Fixture намеренно
+отказывается запускаться против другого имени и очищает только disposable DB.
+
+```bash
+export TEST_DATABASE_URL='postgresql+asyncpg://pyanswer_test:password@localhost:55432/pyanswer_test'
+export DATABASE_URL="$TEST_DATABASE_URL"
+.venv/bin/ruff check .
+.venv/bin/ruff format --check .
+.venv/bin/mypy app
+.venv/bin/pytest --cov=app --cov-report=term-missing --cov-fail-under=80
+```
+
+Внешний Stack Exchange HTTP полностью mock-ируется в tests.
+
+## Docker
+
+Корневой `compose.yaml` содержит только PostgreSQL и backend:
+
+```bash
+docker compose up -d postgres
+docker compose run --rm backend alembic upgrade head
+docker compose run --rm backend python -m app.scripts.bootstrap
+docker compose run --rm backend python -m app.scripts.seed_demo
+docker compose up backend
+```
+
+Backend image запускается non-root пользователем и имеет healthcheck. Migration не запускается
+автоматически вместе с несколькими API workers.
+
+## Ограничения
+
+На Этапе 4 crawler/worker отсутствует: jobs сохраняются в БД и остаются queued. Qdrant, BM25,
+embeddings, Ollama и RAG не настроены и system API показывает их OFFLINE. `/api/search` и
+`/api/ask` не подменяют будущий движок SQL-поиском. Frontend mock mode остаётся демонстрационным
+режимом по умолчанию.

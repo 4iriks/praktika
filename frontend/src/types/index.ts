@@ -337,9 +337,14 @@ export type ApiErrorCode =
   | 'BAD_REQUEST'
   | 'UNAUTHORIZED'
   | 'FORBIDDEN'
+  | 'CSRF_INVALID'
   | 'NOT_FOUND'
   | 'CONFLICT'
   | 'VALIDATION_ERROR'
+  | 'RATE_LIMITED'
+  | 'SERVICE_UNAVAILABLE'
+  | 'SEARCH_ENGINE_NOT_READY'
+  | 'RAG_ENGINE_NOT_READY'
   | 'INTERNAL_ERROR';
 
 export type JsonValue = string | number | boolean | null | JsonObject | JsonValue[];
