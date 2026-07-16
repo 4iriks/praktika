@@ -774,11 +774,19 @@ class SearchIndexJobHandler:
     async def _apply_active_version_delta(
         self, session: AsyncSession, version_id: UUID, delta: int
     ) -> None:
-        version = await session.get(SearchIndexVersion, version_id, with_for_update=True)
-        if version is None:
+        updated_id = await session.scalar(
+            update(SearchIndexVersion)
+            .where(SearchIndexVersion.id == version_id)
+            .values(
+                point_count=func.greatest(0, SearchIndexVersion.point_count + delta),
+                eligible_chunk_count=func.greatest(
+                    0, SearchIndexVersion.eligible_chunk_count + delta
+                ),
+            )
+            .returning(SearchIndexVersion.id)
+        )
+        if updated_id is None:
             raise SearchIndexServiceError("INDEX_VERSION_NOT_FOUND", "Версия индекса не найдена")
-        version.point_count = max(0, version.point_count + delta)
-        version.eligible_chunk_count = max(0, version.eligible_chunk_count + delta)
 
     async def _event(
         self,
