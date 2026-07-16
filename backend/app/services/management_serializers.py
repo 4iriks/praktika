@@ -76,6 +76,19 @@ def job_to_schema(job: Job) -> BackgroundJobOut:
         error_message=job.error_message,
         retry_of_job_id=job.retry_of_job_id,
         cancellable=job.cancellable,
+        claimed_by=job.claimed_by,
+        claimed_at=job.claimed_at,
+        lease_expires_at=job.lease_expires_at,
+        heartbeat_at=job.heartbeat_at,
+        attempt=job.attempt,
+        max_attempts=job.max_attempts,
+        next_attempt_at=job.next_attempt_at,
+        cancellation_requested_at=job.cancellation_requested_at,
+        checkpoint=job.checkpoint,
+        result=job.result,
+        request_count=job.request_count,
+        bytes_received=job.bytes_received,
+        updated_at=job.updated_at,
     )
 
 
@@ -98,6 +111,7 @@ def source_to_schema(source: Source) -> SourceOut:
         last_check_at=source.last_check_at,
         rate_limit_remaining=source.rate_limit_remaining,
         rate_limit_total=source.rate_limit_total,
+        rate_limit_updated_at=source.rate_limit_updated_at,
         quota_reset_at=source.quota_reset_at,
         current_job_id=source.current_job_id,
         last_error=source.last_error,

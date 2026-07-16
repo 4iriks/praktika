@@ -75,6 +75,7 @@ class SourceStatus(StrEnum):
 
 class JobType(StrEnum):
     SOURCE_SYNC = "SOURCE_SYNC"
+    DOCUMENT_REPROCESS = "DOCUMENT_REPROCESS"
     DOCUMENT_REINDEX = "DOCUMENT_REINDEX"
     FULL_REINDEX = "FULL_REINDEX"
     HEALTH_CHECK = "HEALTH_CHECK"
@@ -90,6 +91,10 @@ class JobStatus(StrEnum):
 
 class JobStage(StrEnum):
     PREPARING = "PREPARING"
+    FETCHING_QUESTIONS = "FETCHING_QUESTIONS"
+    FETCHING_ANSWERS = "FETCHING_ANSWERS"
+    WAITING_BACKOFF = "WAITING_BACKOFF"
+    PROCESSING = "PROCESSING"
     CRAWLING = "CRAWLING"
     CLEANING = "CLEANING"
     DEDUPLICATING = "DEDUPLICATING"
@@ -98,6 +103,26 @@ class JobStage(StrEnum):
     INDEXING_BM25 = "INDEXING_BM25"
     INDEXING_VECTOR = "INDEXING_VECTOR"
     FINALIZING = "FINALIZING"
+
+
+class SourceSyncMode(StrEnum):
+    AUTO = "AUTO"
+    INITIAL = "INITIAL"
+    INCREMENTAL = "INCREMENTAL"
+
+
+class JobEventLevel(StrEnum):
+    DEBUG = "DEBUG"
+    INFO = "INFO"
+    WARNING = "WARNING"
+    ERROR = "ERROR"
+
+
+class WorkerInstanceStatus(StrEnum):
+    STARTING = "STARTING"
+    RUNNING = "RUNNING"
+    STOPPING = "STOPPING"
+    STOPPED = "STOPPED"
 
 
 class FeedbackValue(StrEnum):

@@ -9,7 +9,17 @@ from app.db.models.identity import (
     User,
     UserPreference,
 )
-from app.db.models.operations import AuditEvent, Job, PermissionRecord, Source, SystemSetting
+from app.db.models.operations import (
+    AuditEvent,
+    IngestionFailure,
+    Job,
+    JobEvent,
+    PermissionRecord,
+    Source,
+    SourceSyncState,
+    SystemSetting,
+    WorkerInstance,
+)
 
 __all__ = [
     "Answer",
@@ -17,7 +27,9 @@ __all__ = [
     "Document",
     "DocumentTag",
     "Feedback",
+    "IngestionFailure",
     "Job",
+    "JobEvent",
     "PermissionRecord",
     "Role",
     "RolePermission",
@@ -25,8 +37,10 @@ __all__ = [
     "SearchHistory",
     "Session",
     "Source",
+    "SourceSyncState",
     "SystemSetting",
     "Tag",
     "User",
     "UserPreference",
+    "WorkerInstance",
 ]

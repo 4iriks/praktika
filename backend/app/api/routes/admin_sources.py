@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Query, Request
 from app.api.dependencies import DB, require_permission
 from app.core.enums import Permission
 from app.db.models.identity import User
+from app.schemas.ingestion import SourceSyncRequest, SourceSyncStateOut
 from app.schemas.management import (
     BackgroundJobOut,
     SourceConnectionResultOut,
@@ -23,6 +24,7 @@ from app.services.admin_sources import (
     test_source_connection,
     update_source,
 )
+from app.services.ingestion import get_or_create_sync_state, source_sync_state_to_schema
 from app.services.management_serializers import source_to_schema
 
 router = APIRouter(prefix="/admin/sources", tags=["admin-sources"])
@@ -45,6 +47,17 @@ async def sources(
     limit: int = Query(20, ge=1, le=100),
 ) -> SourcesResponse:
     return await list_sources(db, q=q, status=status, enabled=enabled, page=page, limit=limit)
+
+
+@router.get(
+    "/{source_id}/sync-state",
+    response_model=SourceSyncStateOut,
+    summary="Получить checkpoint синхронизации источника",
+    operation_id="getSourceSyncState",
+)
+async def source_sync_state(source_id: UUID, db: DB, actor: SourcesAdmin) -> SourceSyncStateOut:
+    source = await get_source_record(db, source_id)
+    return source_sync_state_to_schema(await get_or_create_sync_state(db, source))
 
 
 @router.get(
@@ -92,9 +105,13 @@ async def source_test(
     operation_id="startSourceSync",
 )
 async def source_sync(
-    source_id: UUID, request: Request, db: DB, actor: SourcesAdmin
+    source_id: UUID,
+    request: Request,
+    db: DB,
+    actor: SourcesAdmin,
+    payload: SourceSyncRequest | None = None,
 ) -> BackgroundJobOut:
-    return await start_source_sync(db, request, actor, source_id)
+    return await start_source_sync(db, request, actor, source_id, payload or SourceSyncRequest())
 
 
 @router.post(

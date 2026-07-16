@@ -9,6 +9,7 @@ from app.api.dependencies import DB, require_all_permissions, require_permission
 from app.api.pagination import parse_optional_datetime
 from app.core.enums import Permission
 from app.db.models.identity import User
+from app.schemas.ingestion import JobEventsResponse
 from app.schemas.management import (
     BackgroundJobOut,
     BulkDocumentRequest,
@@ -31,6 +32,7 @@ from app.services.editor import (
     restore_document,
     update_metadata,
 )
+from app.services.ingestion import list_job_events
 
 router = APIRouter(prefix="/editor", tags=["editor"])
 EditorViewer = Annotated[User, Depends(require_permission(Permission.MANAGED_DOCUMENTS_VIEW))]
@@ -176,6 +178,23 @@ async def reindex(
     document_id: UUID, request: Request, db: DB, actor: ReindexEditor
 ) -> BackgroundJobOut:
     return await reindex_document(db, request, actor, document_id)
+
+
+@router.get(
+    "/jobs/{job_id}/events",
+    response_model=JobEventsResponse,
+    summary="Получить события задания редактора",
+    operation_id="getEditorJobEvents",
+)
+async def job_events(
+    job_id: UUID,
+    db: DB,
+    actor: JobsViewer,
+    sort: str = "created_asc",
+    page: int = Query(1, ge=1),
+    limit: int = Query(50, ge=1, le=100),
+) -> JobEventsResponse:
+    return await list_job_events(db, job_id, sort=sort, page=page, limit=limit)
 
 
 @router.get(

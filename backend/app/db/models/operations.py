@@ -21,7 +21,7 @@ from sqlalchemy.dialects.postgresql import INET, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.enums import JobStatus, JobType, SourceStatus, SourceType
-from app.db.base import Base, UUIDPrimaryKeyMixin
+from app.db.base import Base, UUIDPrimaryKeyMixin, utc_now
 
 if TYPE_CHECKING:
     from app.db.models.content import Document
@@ -59,9 +59,8 @@ class Source(Base, UUIDPrimaryKeyMixin):
     last_check_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     rate_limit_remaining: Mapped[int] = mapped_column(Integer, default=300)
     rate_limit_total: Mapped[int] = mapped_column(Integer, default=300)
-    quota_reset_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    rate_limit_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    quota_reset_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     current_job_id: Mapped[UUID | None] = mapped_column(
         ForeignKey(
             "jobs.id",
@@ -80,6 +79,12 @@ class Source(Base, UUIDPrimaryKeyMixin):
 
     documents: Mapped[list[Document]] = relationship(back_populates="source")
     jobs: Mapped[list[Job]] = relationship(back_populates="source", foreign_keys="Job.source_id")
+    sync_state: Mapped[SourceSyncState | None] = relationship(
+        back_populates="source",
+        cascade="all, delete-orphan",
+        uselist=False,
+    )
+    ingestion_failures: Mapped[list[IngestionFailure]] = relationship(back_populates="source")
 
     __table_args__ = (
         CheckConstraint("type IN ('STACK_EXCHANGE')", name="source_type_values"),
@@ -112,8 +117,30 @@ class Job(Base, UUIDPrimaryKeyMixin):
         ForeignKey("users.id", ondelete="SET NULL"), index=True
     )
     retry_of_job_id: Mapped[UUID | None] = mapped_column(ForeignKey("jobs.id", ondelete="SET NULL"))
+    claimed_by: Mapped[UUID | None] = mapped_column(
+        ForeignKey(
+            "worker_instances.id",
+            name="fk_jobs_claimed_by_worker_instances",
+            ondelete="SET NULL",
+            use_alter=True,
+        ),
+        index=True,
+    )
+    claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    attempt: Mapped[int] = mapped_column(Integer, default=0)
+    max_attempts: Mapped[int] = mapped_column(Integer, default=5)
+    next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    cancellation_requested_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), index=True
+    )
     cancellable: Mapped[bool] = mapped_column(Boolean, default=True)
     payload: Mapped[dict[str, object]] = mapped_column(JSONB, default=dict)
+    checkpoint: Mapped[dict[str, object]] = mapped_column(JSONB, default=dict)
+    result: Mapped[dict[str, object]] = mapped_column(JSONB, default=dict)
+    request_count: Mapped[int] = mapped_column(Integer, default=0)
+    bytes_received: Mapped[int] = mapped_column(Integer, default=0)
     error_code: Mapped[str | None] = mapped_column(String(80))
     error_message: Mapped[str | None] = mapped_column(String(1000))
     planned_duration_ms: Mapped[int] = mapped_column(Integer, default=0)
@@ -123,7 +150,10 @@ class Job(Base, UUIDPrimaryKeyMixin):
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+        DateTime(timezone=True),
+        default=utc_now,
+        server_default=func.now(),
+        onupdate=utc_now,
     )
 
     source: Mapped[Source | None] = relationship(
@@ -132,10 +162,21 @@ class Job(Base, UUIDPrimaryKeyMixin):
     document: Mapped[Document | None] = relationship(back_populates="jobs", lazy="selectin")
     creator: Mapped[User | None] = relationship(foreign_keys=[created_by], lazy="selectin")
     retry_of: Mapped[Job | None] = relationship(remote_side="Job.id")
+    claimant: Mapped[WorkerInstance | None] = relationship(
+        back_populates="claimed_jobs",
+        foreign_keys=[claimed_by],
+        lazy="selectin",
+    )
+    events: Mapped[list[JobEvent]] = relationship(
+        back_populates="job",
+        cascade="all, delete-orphan",
+    )
+    ingestion_failures: Mapped[list[IngestionFailure]] = relationship(back_populates="job")
 
     __table_args__ = (
         CheckConstraint(
-            "type IN ('SOURCE_SYNC','DOCUMENT_REINDEX','FULL_REINDEX','HEALTH_CHECK')",
+            "type IN ('SOURCE_SYNC','DOCUMENT_REPROCESS','DOCUMENT_REINDEX',"
+            "'FULL_REINDEX','HEALTH_CHECK')",
             name="job_type_values",
         ),
         CheckConstraint(
@@ -143,17 +184,24 @@ class Job(Base, UUIDPrimaryKeyMixin):
             name="job_status_values",
         ),
         CheckConstraint(
-            "stage IN ('PREPARING','CRAWLING','CLEANING','DEDUPLICATING','CHUNKING',"
-            "'EMBEDDING','INDEXING_BM25','INDEXING_VECTOR','FINALIZING')",
+            "stage IN ('PREPARING','FETCHING_QUESTIONS','FETCHING_ANSWERS',"
+            "'WAITING_BACKOFF','PROCESSING','CRAWLING','CLEANING','DEDUPLICATING',"
+            "'CHUNKING','EMBEDDING','INDEXING_BM25','INDEXING_VECTOR','FINALIZING')",
             name="job_stage_values",
         ),
         CheckConstraint("progress BETWEEN 0 AND 100", name="job_progress_range"),
+        CheckConstraint("attempt >= 0", name="job_attempt_non_negative"),
+        CheckConstraint("max_attempts >= 1", name="job_max_attempts_positive"),
+        CheckConstraint("attempt <= max_attempts", name="job_attempt_within_limit"),
+        CheckConstraint("request_count >= 0", name="job_request_count_non_negative"),
+        CheckConstraint("bytes_received >= 0", name="job_bytes_received_non_negative"),
+        Index("ix_jobs_claim_queue", "status", "next_attempt_at", "created_at"),
         Index(
             "uq_jobs_active_document_reindex",
             "document_id",
             unique=True,
             postgresql_where=and_(
-                type == JobType.DOCUMENT_REINDEX,
+                type.in_([JobType.DOCUMENT_REINDEX, JobType.DOCUMENT_REPROCESS]),
                 status.in_([JobStatus.QUEUED, JobStatus.RUNNING]),
             ),
         ),
@@ -175,6 +223,161 @@ class Job(Base, UUIDPrimaryKeyMixin):
                 status.in_([JobStatus.QUEUED, JobStatus.RUNNING]),
             ),
         ),
+    )
+
+
+class SourceSyncState(Base):
+    __tablename__ = "source_sync_states"
+
+    source_id: Mapped[UUID] = mapped_column(
+        ForeignKey("sources.id", ondelete="CASCADE"), primary_key=True
+    )
+    initial_sync_completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    initial_snapshot_todate: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    next_page: Mapped[int] = mapped_column(Integer, default=1)
+    incremental_watermark: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    current_mode: Mapped[str | None] = mapped_column(String(16))
+    last_checkpoint_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_seen_question_activity_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    total_questions_fetched: Mapped[int] = mapped_column(Integer, default=0)
+    total_answers_fetched: Mapped[int] = mapped_column(Integer, default=0)
+    total_documents_inserted: Mapped[int] = mapped_column(Integer, default=0)
+    total_documents_updated: Mapped[int] = mapped_column(Integer, default=0)
+    total_documents_unchanged: Mapped[int] = mapped_column(Integer, default=0)
+    total_exact_duplicates: Mapped[int] = mapped_column(Integer, default=0)
+    total_items_skipped: Mapped[int] = mapped_column(Integer, default=0)
+    total_errors: Mapped[int] = mapped_column(Integer, default=0)
+    last_job_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("jobs.id", ondelete="SET NULL"), index=True
+    )
+    state: Mapped[dict[str, object]] = mapped_column(JSONB, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    source: Mapped[Source] = relationship(back_populates="sync_state")
+    last_job: Mapped[Job | None] = relationship(foreign_keys=[last_job_id], lazy="selectin")
+
+    __table_args__ = (
+        CheckConstraint("next_page >= 1", name="source_sync_state_next_page_positive"),
+        CheckConstraint(
+            "current_mode IS NULL OR current_mode IN ('AUTO','INITIAL','INCREMENTAL')",
+            name="source_sync_state_mode_values",
+        ),
+        CheckConstraint(
+            "total_questions_fetched >= 0 AND total_answers_fetched >= 0 "
+            "AND total_documents_inserted >= 0 AND total_documents_updated >= 0 "
+            "AND total_documents_unchanged >= 0 AND total_exact_duplicates >= 0 "
+            "AND total_items_skipped >= 0 AND total_errors >= 0",
+            name="source_sync_state_counters_non_negative",
+        ),
+    )
+
+
+class WorkerInstance(Base, UUIDPrimaryKeyMixin):
+    __tablename__ = "worker_instances"
+
+    name: Mapped[str] = mapped_column(String(200))
+    instance_id: Mapped[str] = mapped_column(String(200), unique=True, index=True)
+    capabilities: Mapped[list[str]] = mapped_column(JSONB, default=list)
+    version: Mapped[str] = mapped_column(String(80))
+    hostname: Mapped[str] = mapped_column(String(255))
+    pid: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(16), index=True)
+    current_job_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("jobs.id", ondelete="SET NULL"), index=True
+    )
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    heartbeat_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), index=True
+    )
+    stopped_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    current_job: Mapped[Job | None] = relationship(
+        foreign_keys=[current_job_id],
+        lazy="selectin",
+        post_update=True,
+    )
+    claimed_jobs: Mapped[list[Job]] = relationship(
+        back_populates="claimant",
+        foreign_keys="Job.claimed_by",
+    )
+
+    __table_args__ = (
+        CheckConstraint("pid > 0", name="worker_instance_pid_positive"),
+        CheckConstraint(
+            "status IN ('STARTING','RUNNING','STOPPING','STOPPED')",
+            name="worker_instance_status_values",
+        ),
+    )
+
+
+class JobEvent(Base, UUIDPrimaryKeyMixin):
+    __tablename__ = "job_events"
+
+    job_id: Mapped[UUID] = mapped_column(ForeignKey("jobs.id", ondelete="CASCADE"), index=True)
+    level: Mapped[str] = mapped_column(String(16), index=True)
+    stage: Mapped[str] = mapped_column(String(32), index=True)
+    code: Mapped[str] = mapped_column(String(80), index=True)
+    message: Mapped[str] = mapped_column(String(1000))
+    metrics: Mapped[dict[str, object]] = mapped_column(JSONB, default=dict)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), index=True
+    )
+
+    job: Mapped[Job] = relationship(back_populates="events")
+
+    __table_args__ = (
+        CheckConstraint(
+            "level IN ('DEBUG','INFO','WARNING','ERROR')",
+            name="job_event_level_values",
+        ),
+        CheckConstraint(
+            "stage IN ('PREPARING','FETCHING_QUESTIONS','FETCHING_ANSWERS',"
+            "'WAITING_BACKOFF','PROCESSING','CRAWLING','CLEANING','DEDUPLICATING',"
+            "'CHUNKING','EMBEDDING','INDEXING_BM25','INDEXING_VECTOR','FINALIZING')",
+            name="job_event_stage_values",
+        ),
+        CheckConstraint("length(code) > 0", name="job_event_code_not_empty"),
+        CheckConstraint("length(message) > 0", name="job_event_message_not_empty"),
+        Index("ix_job_events_job_created_at", "job_id", "created_at"),
+    )
+
+
+class IngestionFailure(Base, UUIDPrimaryKeyMixin):
+    __tablename__ = "ingestion_failures"
+
+    job_id: Mapped[UUID] = mapped_column(ForeignKey("jobs.id", ondelete="CASCADE"), index=True)
+    source_id: Mapped[UUID] = mapped_column(
+        ForeignKey("sources.id", ondelete="CASCADE"), index=True
+    )
+    external_id: Mapped[str | None] = mapped_column(String(120), index=True)
+    entity_type: Mapped[str] = mapped_column(String(40), index=True)
+    error_code: Mapped[str] = mapped_column(String(80), index=True)
+    safe_message: Mapped[str] = mapped_column(String(1000))
+    retryable: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    attempt: Mapped[int] = mapped_column(Integer, default=0)
+    context: Mapped[dict[str, object]] = mapped_column(JSONB, default=dict)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), index=True
+    )
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+
+    job: Mapped[Job] = relationship(back_populates="ingestion_failures")
+    source: Mapped[Source] = relationship(back_populates="ingestion_failures")
+
+    __table_args__ = (
+        CheckConstraint("length(entity_type) > 0", name="ingestion_failure_entity_not_empty"),
+        CheckConstraint("length(error_code) > 0", name="ingestion_failure_code_not_empty"),
+        CheckConstraint("length(safe_message) > 0", name="ingestion_failure_message_not_empty"),
+        CheckConstraint("attempt >= 0", name="ingestion_failure_attempt_non_negative"),
+        CheckConstraint(
+            "resolved_at IS NULL OR resolved_at >= created_at",
+            name="ingestion_failure_resolution_order",
+        ),
+        Index("ix_ingestion_failures_source_created_at", "source_id", "created_at"),
+        Index("ix_ingestion_failures_job_created_at", "job_id", "created_at"),
     )
 
 

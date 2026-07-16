@@ -2,6 +2,9 @@
 
 Base URL: `/api`. JSON fields используют camelCase, Python и PostgreSQL — snake_case.
 
+Подэтап 5.1 расширяет существующий контракт operational-полями worker и ingestion. Старые
+auth/user/editor/admin методы сохраняют обратную совместимость.
+
 ## Cookie и CSRF flow
 
 1. `GET /auth/csrf` возвращает `{ "csrfToken": "..." }` и readable CSRF-cookie.
@@ -69,6 +72,7 @@ User endpoints никогда не открывают данные другог�
 - `POST /editor/documents/{documentId}/hide|restore|reindex`;
 - `POST /editor/documents/bulk`;
 - `GET /editor/jobs`.
+- `GET /editor/jobs/{jobId}/events` — read-only события доступной job.
 
 Reindex только создаёт `QUEUED` job; indexer не запускается в HTTP request.
 
@@ -81,6 +85,42 @@ Reindex только создаёт `QUEUED` job; indexer не запускае�
 - audit: read-only list/detail;
 - system: status/health-check/settings.
 
+### Ingestion 5.1
+
+- `POST /admin/sources/{sourceId}/test` выполняет один малый Stack Exchange request и не создаёт
+  job или document;
+- `POST /admin/sources/{sourceId}/sync` только создаёт durable `SOURCE_SYNC` job;
+- `POST /admin/sources/{sourceId}/stop` идемпотентно запрашивает cancellation, не убивая worker;
+- `GET /admin/jobs/{jobId}/events` возвращает безопасную timeline событий.
+
+Пример тела start sync:
+
+```json
+{
+  "mode": "AUTO",
+  "maxDocuments": 100,
+  "maxPages": 2,
+  "dryRun": true
+}
+```
+
+`mode` принимает `AUTO`, `INITIAL` или `INCREMENTAL`. Limits имеют серверные maximum. Поля можно
+опустить для configured source defaults, но полный import не запускается автоматически. На 5.1
+`dryRun=true` выполняет fetch/checkpoint без сохранения documents и без завершения initial sync.
+
+Job response сохраняет прежние поля и дополнительно может содержать:
+
+- `claimedBy`, `claimedAt`, `leaseExpiresAt`, `heartbeatAt`;
+- `attempt`, `maxAttempts`, `nextAttemptAt`;
+- `cancellationRequestedAt`, `checkpoint`, `result`;
+- `requestCount`, `bytesReceived`.
+
+Job event содержит `id`, `jobId`, `level`, `stage`, `code`, `message`, безопасные `metrics` и
+`createdAt`. Список использует общий pagination contract и стабильную сортировку.
+
+Test connection возвращает `success`, `latencyMs`, quota remaining/max, `hasMore` и `checkedAt`.
+API key, raw wrapper и response body не возвращаются.
+
 ### Operations
 
 - `GET /health/live` — без DB query;
@@ -88,6 +128,9 @@ Reindex только создаёт `QUEUED` job; indexer не запускае�
 - `GET /status`, `GET /system/public-policy`;
 - `GET /search` — HTTP 501 до Этапа 6;
 - `POST /ask` — HTTP 501 до Этапа 6.
+
+Worker не меняет контракт search/ask: ingestion и поисковая индексация являются разными
+этапами. `SOURCE_SYNC` на 5.1 не устанавливает BM25/vector status в `READY`.
 
 ## 401 handling frontend
 

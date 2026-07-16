@@ -1,5 +1,37 @@
 name: pyanswer
 
+x-ingestion-environment: &ingestion-environment
+  STACK_EXCHANGE_SITE: ${STACK_EXCHANGE_SITE:-ru.stackoverflow}
+  STACK_EXCHANGE_TAG: ${STACK_EXCHANGE_TAG:-python}
+  STACK_EXCHANGE_TARGET_DOCUMENTS: ${STACK_EXCHANGE_TARGET_DOCUMENTS:-25000}
+  STACKEXCHANGE_API_BASE_URL: ${STACKEXCHANGE_API_BASE_URL:-https://api.stackexchange.com/2.3}
+  STACKEXCHANGE_KEY: ${STACKEXCHANGE_KEY:-}
+  STACKEXCHANGE_QUESTION_FILTER: ${STACKEXCHANGE_QUESTION_FILTER:-withbody}
+  STACKEXCHANGE_ANSWER_FILTER: ${STACKEXCHANGE_ANSWER_FILTER:-withbody}
+  STACKEXCHANGE_PAGE_SIZE: ${STACKEXCHANGE_PAGE_SIZE:-100}
+  STACKEXCHANGE_REQUESTS_PER_SECOND: ${STACKEXCHANGE_REQUESTS_PER_SECOND:-3}
+  STACKEXCHANGE_CONNECT_TIMEOUT_SECONDS: ${STACKEXCHANGE_CONNECT_TIMEOUT_SECONDS:-5}
+  STACKEXCHANGE_READ_TIMEOUT_SECONDS: ${STACKEXCHANGE_READ_TIMEOUT_SECONDS:-20}
+  STACKEXCHANGE_WRITE_TIMEOUT_SECONDS: ${STACKEXCHANGE_WRITE_TIMEOUT_SECONDS:-10}
+  STACKEXCHANGE_POOL_TIMEOUT_SECONDS: ${STACKEXCHANGE_POOL_TIMEOUT_SECONDS:-5}
+  STACKEXCHANGE_MAX_RETRIES: ${STACKEXCHANGE_MAX_RETRIES:-4}
+  STACKEXCHANGE_QUOTA_RESERVE: ${STACKEXCHANGE_QUOTA_RESERVE:-100}
+  STACKEXCHANGE_MAX_RESPONSE_BYTES: ${STACKEXCHANGE_MAX_RESPONSE_BYTES:-8000000}
+  STACKEXCHANGE_MAX_PAGES: ${STACKEXCHANGE_MAX_PAGES:-1000}
+  STACKEXCHANGE_INCREMENTAL_OVERLAP_SECONDS: ${STACKEXCHANGE_INCREMENTAL_OVERLAP_SECONDS:-86400}
+  STACKEXCHANGE_USER_AGENT: ${STACKEXCHANGE_USER_AGENT:-PyAnswer/0.5 StackExchange ingestion worker}
+  WORKER_POLL_INTERVAL_SECONDS: ${WORKER_POLL_INTERVAL_SECONDS:-2}
+  WORKER_LEASE_SECONDS: ${WORKER_LEASE_SECONDS:-60}
+  WORKER_HEARTBEAT_SECONDS: ${WORKER_HEARTBEAT_SECONDS:-15}
+  WORKER_MAX_ATTEMPTS: ${WORKER_MAX_ATTEMPTS:-5}
+  WORKER_SHUTDOWN_TIMEOUT_SECONDS: ${WORKER_SHUTDOWN_TIMEOUT_SECONDS:-30}
+
+x-backend-image: &backend-image
+  image: pyanswer-backend:${APP_VERSION:-0.5.0}
+  build:
+    context: ./backend
+    dockerfile: Dockerfile
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -21,16 +53,15 @@ services:
       start_period: 5s
 
   backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
+    <<: *backend-image
     restart: unless-stopped
     init: true
     stop_grace_period: 25s
     environment:
+      <<: *ingestion-environment
       APP_ENV: ${APP_ENV:-development}
       APP_NAME: ${APP_NAME:-PyAnswer API}
-      APP_VERSION: ${APP_VERSION:-0.4.0}
+      APP_VERSION: ${APP_VERSION:-0.5.0}
       DEBUG: ${DEBUG:-false}
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-pyanswer}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-pyanswer}
       FRONTEND_ORIGINS: ${FRONTEND_ORIGINS:-["http://localhost:5173"]}
@@ -47,9 +78,6 @@ services:
       BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}
       BOOTSTRAP_ADMIN_NAME: ${BOOTSTRAP_ADMIN_NAME:-Администратор}
       SEED_DEMO_DATA: ${SEED_DEMO_DATA:-false}
-      STACK_EXCHANGE_SITE: ${STACK_EXCHANGE_SITE:-ru.stackoverflow}
-      STACK_EXCHANGE_TAG: ${STACK_EXCHANGE_TAG:-python}
-      STACK_EXCHANGE_TARGET_DOCUMENTS: ${STACK_EXCHANGE_TARGET_DOCUMENTS:-25000}
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     depends_on:
@@ -67,6 +95,27 @@ services:
       timeout: 5s
       retries: 10
       start_period: 10s
+
+  worker:
+    <<: *backend-image
+    restart: unless-stopped
+    init: true
+    stop_grace_period: ${WORKER_SHUTDOWN_TIMEOUT_SECONDS:-30}s
+    command: ["python", "-m", "app.worker"]
+    environment:
+      <<: *ingestion-environment
+      APP_ENV: ${APP_ENV:-development}
+      APP_NAME: ${APP_NAME:-PyAnswer Worker}
+      APP_VERSION: ${APP_VERSION:-0.5.0}
+      DEBUG: ${DEBUG:-false}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-pyanswer}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-pyanswer}
+      FRONTEND_ORIGINS: ${FRONTEND_ORIGINS:-["http://localhost:5173"]}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      COOKIE_SAMESITE: ${COOKIE_SAMESITE:-lax}
+      SEED_DEMO_DATA: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
 
 volumes:
   postgres_data:

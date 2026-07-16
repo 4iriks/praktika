@@ -191,7 +191,21 @@ async def test_source_connection_uses_safe_mocked_http(db: AsyncSession) -> None
 
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.host == "api.stackexchange.com"
-        return httpx.Response(200, json={"items": [{}]})
+        return httpx.Response(
+            200,
+            json={
+                "items": [
+                    {
+                        "question_id": 1,
+                        "creation_date": 1_700_000_000,
+                        "last_activity_date": 1_700_000_100,
+                    }
+                ],
+                "has_more": False,
+                "quota_max": 300,
+                "quota_remaining": 250,
+            },
+        )
 
     transport = httpx.MockTransport(handler)
     async with httpx.AsyncClient(transport=transport) as mocked_client:

@@ -9,6 +9,7 @@ from app.api.dependencies import DB, require_permission
 from app.api.pagination import parse_optional_datetime
 from app.core.enums import Permission
 from app.db.models.identity import User
+from app.schemas.ingestion import JobEventsResponse
 from app.schemas.management import BackgroundJobOut, JobsResponse
 from app.services.admin_jobs import (
     cancel_job,
@@ -17,6 +18,7 @@ from app.services.admin_jobs import (
     start_full_reindex,
 )
 from app.services.editor import list_jobs
+from app.services.ingestion import list_job_events
 from app.services.management_serializers import job_to_schema
 
 router = APIRouter(prefix="/admin/jobs", tags=["admin-jobs"])
@@ -70,6 +72,23 @@ async def jobs(
 )
 async def full_reindex(request: Request, db: DB, actor: JobsAdmin) -> BackgroundJobOut:
     return await start_full_reindex(db, request, actor)
+
+
+@router.get(
+    "/{job_id}/events",
+    response_model=JobEventsResponse,
+    summary="Получить события фонового задания",
+    operation_id="getAdminJobEvents",
+)
+async def job_events(
+    job_id: UUID,
+    db: DB,
+    actor: JobsAdmin,
+    sort: str = "created_asc",
+    page: int = Query(1, ge=1),
+    limit: int = Query(50, ge=1, le=100),
+) -> JobEventsResponse:
+    return await list_job_events(db, job_id, sort=sort, page=page, limit=limit)
 
 
 @router.get(

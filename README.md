@@ -1,8 +1,8 @@
 # PyAnswer
 
 PyAnswer — локальная интеллектуальная поисковая система по русскоязычным вопросам и ответам о
-Python со Stack Overflow на русском. Репозиторий содержит завершённый frontend Этапов 1–3 и
-серверный фундамент Этапа 4.
+Python со Stack Overflow на русском. Репозиторий содержит завершённый frontend Этапов 1–3,
+серверный фундамент Этапа 4 и инфраструктуру ingestion подэтапа 5.1.
 
 ## Состояние проекта
 
@@ -13,6 +13,8 @@ Python со Stack Overflow на русском. Репозиторий соде�
 - RBAC — USER, EDITOR и ADMIN с повторной проверкой permissions на сервере;
 - PostgreSQL — users, sessions, documents, answers, tags, history, saved, feedback, jobs, audit,
   sources и system settings;
+- ingestion 5.1 — durable PostgreSQL queue, отдельный worker, checkpoint/events и типизированный
+  Stack Exchange API client;
 - mock mode frontend сохранён и остаётся значением по умолчанию;
 - HTTP endpoints `/api/search` и `/api/ask` честно возвращают 501 до Этапа 6.
 
@@ -38,18 +40,22 @@ docker compose run --rm backend alembic upgrade head
 docker compose run --rm backend python -m app.scripts.bootstrap
 docker compose run --rm backend python -m app.scripts.seed_demo
 docker compose up backend
+make worker-up
 ```
+
+Worker использует тот же backend image, не публикует порт и запускается отдельно от FastAPI.
+`make worker-health` показывает container state и последние heartbeat records.
 
 Локальный запуск без Docker описан в [backend/README.md](backend/README.md). Swagger в
 development доступен по `http://localhost:8000/api/docs`.
 
 Demo seed создаёт:
 
-| Роль | Email | Пароль |
-| --- | --- | --- |
-| USER | `user@pyanswer.local` | `Demo123!` |
+| Роль   | Email                   | Пароль     |
+| ------ | ----------------------- | ---------- |
+| USER   | `user@pyanswer.local`   | `Demo123!` |
 | EDITOR | `editor@pyanswer.local` | `Demo123!` |
-| ADMIN | `admin@pyanswer.local` | `Demo123!` |
+| ADMIN  | `admin@pyanswer.local`  | `Demo123!` |
 
 Эти данные предназначены только для локальной демонстрации. В production demo seed выключен.
 
@@ -84,12 +90,15 @@ npm run format:check
 - [ER-диаграмма](docs/erd.md);
 - [API contract](docs/api-contract.md);
 - [SQL-примеры](docs/sql_examples.sql);
+- [Worker architecture](docs/worker-architecture.md);
+- [Stack Exchange client](docs/stackexchange-client.md);
+- [Ingestion 5.1](docs/stage5-ingestion.md);
 - сохранённые задания: [Этап 4](docs/prompts/stage-4.md) и
   [полный комплект Этапа 5](docs/prompts/stage-5.md) с отдельными промтами 5.1–5.3.
 
-## Границы Этапа 4
+## Границы подэтапа 5.1
 
-Backend не имитирует BM25, HNSW, embeddings, Qdrant, Ollama или RAG через SQL. Фоновые jobs на
-этом этапе надёжно сохраняются как `QUEUED`, но worker появится на Этапе 5. Настоящие search и
-RAG будут подключены позднее. Frontend permission checks отвечают за UX; защитой являются только
-серверные session, permission dependencies, service rules и PostgreSQL constraints.
+Backend не имитирует BM25, HNSW, embeddings, Qdrant, Ollama или RAG через SQL. Подэтап 5.1 не
+завершает весь ingestion pipeline: очистка, дедупликация и chunks появятся в 5.2, а полный импорт
+25 000 веток автоматически не запускается. Настоящие search/RAG будут подключены позднее;
+`/api/search` и `/api/ask` остаются честными 501 в HTTP mode.

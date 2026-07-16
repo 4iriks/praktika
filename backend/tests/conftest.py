@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator
 from pathlib import Path
 
 import pytest
@@ -14,13 +14,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from alembic import command
 
 TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL") or os.environ.get("DATABASE_URL", "")
-if "test" not in TEST_DATABASE_URL.casefold():
-    raise RuntimeError(
-        "Integration tests require TEST_DATABASE_URL pointing to a disposable test database"
-    )
-
-os.environ["DATABASE_URL"] = TEST_DATABASE_URL
-os.environ["TEST_DATABASE_URL"] = TEST_DATABASE_URL
+if TEST_DATABASE_URL:
+    os.environ["DATABASE_URL"] = TEST_DATABASE_URL
+    os.environ["TEST_DATABASE_URL"] = TEST_DATABASE_URL
 os.environ["APP_ENV"] = "test"
 os.environ["ARGON2_TIME_COST"] = "1"
 os.environ["ARGON2_MEMORY_COST"] = "8192"
@@ -39,20 +35,25 @@ from app.seed.demo import seed_demo_data  # noqa: E402
 DEMO_PASSWORD = "Demo123!"
 
 
-@pytest.fixture(scope="session", autouse=True)
-def migrated_database() -> Iterator[None]:
+def pytest_sessionstart(session: pytest.Session) -> None:
+    del session
+    if "test" not in TEST_DATABASE_URL.casefold():
+        return
     config = Config(str(Path(__file__).parents[1] / "alembic.ini"))
     command.upgrade(config, "head")
-    yield
 
 
 @pytest_asyncio.fixture(autouse=True)
 async def reset_database(
-    migrated_database: None, request: pytest.FixtureRequest
+    request: pytest.FixtureRequest,
 ) -> AsyncIterator[None]:
     if request.node.get_closest_marker("integration") is None:
         yield
         return
+    if "test" not in TEST_DATABASE_URL.casefold():
+        raise RuntimeError(
+            "Integration tests require TEST_DATABASE_URL pointing to a disposable test database"
+        )
     table_names = ", ".join(f'"{table.name}"' for table in Base.metadata.sorted_tables)
     async with engine.begin() as connection:
         await connection.execute(text(f"TRUNCATE TABLE {table_names} RESTART IDENTITY CASCADE"))

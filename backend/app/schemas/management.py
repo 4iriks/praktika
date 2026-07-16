@@ -70,6 +70,19 @@ class BackgroundJobOut(ApiModel):
     error_message: str | None = None
     retry_of_job_id: UUID | None = None
     cancellable: bool
+    claimed_by: UUID | None = None
+    claimed_at: datetime | None = None
+    lease_expires_at: datetime | None = None
+    heartbeat_at: datetime | None = None
+    attempt: int = 0
+    max_attempts: int = 5
+    next_attempt_at: datetime | None = None
+    cancellation_requested_at: datetime | None = None
+    checkpoint: dict[str, object] = Field(default_factory=dict)
+    result: dict[str, object] = Field(default_factory=dict)
+    request_count: int = 0
+    bytes_received: int = 0
+    updated_at: datetime
 
 
 class JobsResponse(ApiModel):
@@ -225,7 +238,8 @@ class SourceOut(ApiModel):
     last_check_at: datetime | None = None
     rate_limit_remaining: int
     rate_limit_total: int
-    quota_reset_at: datetime
+    rate_limit_updated_at: datetime | None = None
+    quota_reset_at: datetime | None = None
     current_job_id: UUID | None = None
     last_error: str | None = None
     api_key_configured: bool
@@ -251,6 +265,9 @@ class SourceConnectionResultOut(ApiModel):
     latency_ms: int
     checked_at: datetime
     message: str
+    quota_remaining: int | None = None
+    quota_max: int | None = None
+    has_more: bool | None = None
 
 
 class SystemServiceOut(ApiModel):

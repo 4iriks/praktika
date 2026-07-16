@@ -1,17 +1,24 @@
 from __future__ import annotations
 
 import time
+from datetime import timedelta
 
 from fastapi import Request
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
-from app.core.enums import AuditAction, AuditEntityType, JobStatus, JobType
+from app.core.enums import (
+    AuditAction,
+    AuditEntityType,
+    JobStatus,
+    JobType,
+    WorkerInstanceStatus,
+)
 from app.db.base import utc_now
 from app.db.models.content import Document
 from app.db.models.identity import User
-from app.db.models.operations import Job, SystemSetting
+from app.db.models.operations import Job, SystemSetting, WorkerInstance
 from app.schemas.content import PublicAccessPolicyOut
 from app.schemas.management import (
     SystemHardwareOut,
@@ -126,10 +133,45 @@ async def system_status(db: AsyncSession) -> SystemStatusOut:
             message="Соединение установлено",
         ),
     ]
+    latest_worker = await db.scalar(
+        select(WorkerInstance)
+        .where(WorkerInstance.capabilities.contains(["source_sync"]))
+        .order_by(WorkerInstance.heartbeat_at.desc(), WorkerInstance.id.desc())
+        .limit(1)
+    )
+    worker_status = "OFFLINE"
+    worker_message = "Worker ещё не зарегистрирован"
+    worker_last_check = now
+    if latest_worker is not None:
+        worker_last_check = latest_worker.heartbeat_at
+        heartbeat_age = now - latest_worker.heartbeat_at
+        online_window = timedelta(seconds=config.worker_heartbeat_seconds * 2)
+        degraded_window = timedelta(seconds=config.worker_lease_seconds)
+        if latest_worker.status == WorkerInstanceStatus.RUNNING and heartbeat_age <= online_window:
+            worker_status = "ONLINE"
+            worker_message = "Worker принимает задания SOURCE_SYNC"
+        elif (
+            latest_worker.status != WorkerInstanceStatus.STOPPED
+            and heartbeat_age <= degraded_window
+        ):
+            worker_status = "DEGRADED"
+            worker_message = "Heartbeat worker задерживается или worker завершает работу"
+        else:
+            worker_message = "Актуальный heartbeat worker отсутствует"
+    services.append(
+        SystemServiceOut(
+            id="crawler",
+            name="Crawler worker",
+            status=worker_status,
+            latency_ms=0,
+            version=latest_worker.version if latest_worker is not None else "not running",
+            last_check_at=worker_last_check,
+            message=worker_message,
+        )
+    )
     for identifier, name in [
         ("qdrant", "Qdrant"),
         ("ollama", "Ollama"),
-        ("crawler", "Crawler"),
         ("indexer", "Indexer"),
         ("bm25", "BM25 index"),
         ("vector", "Vector index"),
@@ -144,7 +186,7 @@ async def system_status(db: AsyncSession) -> SystemStatusOut:
                 latency_ms=0,
                 version="not configured",
                 last_check_at=now,
-                message="Не настроено на Этапе 4",
+                message="Не настроено на Этапе 5",
             )
         )
     return SystemStatusOut(

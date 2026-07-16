@@ -1,8 +1,12 @@
-# PyAnswer API — Этап 4
+# PyAnswer API — Этап 4 и подэтап 5.1
 
 FastAPI backend реализует серверную аутентификацию, пользовательский контур, RBAC, редакторские
 и административные операции PyAnswer. PostgreSQL является единственной runtime и integration
 test DB; SQLite не используется.
+
+Подэтап 5.1 расширяет backend durable очередью, отдельным worker и типизированным клиентом Stack
+Exchange. Это инфраструктурная часть Этапа 5: полный document processing pipeline появится в
+5.2.
 
 ## Стек и структура
 
@@ -19,10 +23,12 @@ backend/
     core/             config, security, permissions, CSRF, middleware, logging
     db/models/        SQLAlchemy models
     db/repositories/  data access без решений о permissions
+    integrations/     типизированные клиенты внешних API
     schemas/          camelCase Pydantic API schemas
     services/         транзакционные бизнес-правила и audit
     seed/             идемпотентные bootstrap/demo seed функции
     scripts/          CLI entry points
+    worker.py          отдельный lifecycle фонового worker
   alembic/            async environment и начальная migration
   tests/unit/         чистая security/domain логика
   tests/integration/  реальные PostgreSQL HTTP/service scenarios
@@ -39,10 +45,13 @@ backend/
 - Argon2: time/memory/parallelism cost;
 - bootstrap: admin email/name/password из окружения;
 - seed/source: `SEED_DEMO_DATA`, site, tag и target documents;
+- Stack Exchange: allowlisted API URL, optional key, filters, page/rate/timeout/retry/quota limits;
+- worker: poll interval, lease, heartbeat, max attempts и graceful shutdown timeout;
 - rate limit: число auth attempts и окно.
 
 Production-конфигурация отклоняет insecure cookie, default database credentials и включённый
-demo seed. Настоящие пароли и `.env` не коммитятся.
+demo seed. `STACKEXCHANGE_KEY` можно оставить пустым; он читается только из environment и не
+попадает в БД или API. Настоящие пароли и `.env` не коммитятся.
 
 ## Локальная установка
 
@@ -81,7 +90,27 @@ Seed не удаляет и не перезаписывает существую
 ```
 
 `downgrade -1` проверяется только на disposable test DB. Initial migration создаёт схему без seed
-и паролей; upgrade/downgrade транзакционны для PostgreSQL.
+и паролей; migration `20260716_0002` добавляет worker queue, source checkpoint, events и ingestion
+failures. Upgrade/downgrade транзакционны для PostgreSQL.
+
+## Worker и Stack Exchange
+
+Worker запускается отдельно командой `python -m app.worker`. Он атомарно захватывает jobs через
+`FOR UPDATE SKIP LOCKED`, фиксирует claim и выполняет сетевую работу вне транзакции. Lease и
+heartbeat позволяют восстановить stale job, а cancellation обрабатывается в безопасной точке с
+сохранением последнего committed checkpoint.
+
+Stack Exchange client использует один `httpx.AsyncClient` на lifecycle worker, pagesize не более
+100 и batch answers не более 100 question ID. Он соблюдает `has_more`, wrapper backoff,
+`Retry-After`, quota reserve, ограниченные retries и response size limit. Test connection делает
+один малый request и не сохраняет documents.
+
+На 5.1 `SOURCE_SYNC` предназначен для ограниченного dry-run/fetch/checkpoint сценария. Полная
+очистка, upsert documents/answers/tags, дедупликация и chunks появятся в 5.2. Подробности:
+
+- [worker architecture](../docs/worker-architecture.md);
+- [Stack Exchange client](../docs/stackexchange-client.md);
+- [ingestion 5.1](../docs/stage5-ingestion.md).
 
 ## Security model
 
@@ -127,6 +156,7 @@ Structured access log не содержит cookies, Authorization или reques
 - user: `/api/users/me`, stats, history, saved, feedback, public document;
 - editor: dashboard, managed documents, metadata, hide/restore/reindex, bulk, jobs;
 - admin: dashboard, users, sources, jobs, audit, system/status/settings;
+- ingestion 5.1: source sync mode/limits, source checkpoint и read-only job events;
 - operations: `/api/health/live`, `/api/health/ready`;
 - placeholders: `/api/search` и `/api/ask` возвращают 501.
 
@@ -147,11 +177,11 @@ export DATABASE_URL="$TEST_DATABASE_URL"
 .venv/bin/pytest --cov=app --cov-report=term-missing --cov-fail-under=80
 ```
 
-Внешний Stack Exchange HTTP полностью mock-ируется в tests.
+Внешний Stack Exchange HTTP полностью mock-ируется в обычных tests.
 
 ## Docker
 
-Корневой `compose.yaml` содержит только PostgreSQL и backend:
+Корневой `compose.yaml` содержит PostgreSQL, backend и отдельный worker на том же backend image:
 
 ```bash
 docker compose up -d postgres
@@ -159,14 +189,25 @@ docker compose run --rm backend alembic upgrade head
 docker compose run --rm backend python -m app.scripts.bootstrap
 docker compose run --rm backend python -m app.scripts.seed_demo
 docker compose up backend
+docker compose up -d worker
 ```
 
 Backend image запускается non-root пользователем и имеет healthcheck. Migration не запускается
-автоматически вместе с несколькими API workers.
+автоматически вместе с API или worker.
+
+Makefile автоматически выбирает рабочий `docker compose` или `docker-compose`; выбор можно
+переопределить через `COMPOSE=...`:
+
+```bash
+make worker-up
+make worker-health
+make worker-logs
+make COMPOSE=docker-compose worker-up
+```
 
 ## Ограничения
 
-На Этапе 4 crawler/worker отсутствует: jobs сохраняются в БД и остаются queued. Qdrant, BM25,
-embeddings, Ollama и RAG не настроены и system API показывает их OFFLINE. `/api/search` и
-`/api/ask` не подменяют будущий движок SQL-поиском. Frontend mock mode остаётся демонстрационным
-режимом по умолчанию.
+Подэтап 5.1 не является завершением Этапа 5 и не запускает полный импорт 25 000 документов.
+Qdrant, BM25, embeddings, HNSW, reranker, Ollama и RAG не настроены. `/api/search` и `/api/ask`
+не подменяют будущий движок SQL-поиском и продолжают возвращать 501. Frontend mock mode остаётся
+демонстрационным режимом по умолчанию.

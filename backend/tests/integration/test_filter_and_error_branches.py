@@ -149,7 +149,7 @@ async def test_admin_source_error_and_job_action_branches(
     ).status_code == 200
     assert (
         await client.post(f"/api/admin/sources/{source_id}/stop", headers=csrf_header(client))
-    ).status_code == 409
+    ).status_code == 200
     assert (await client.get(f"/api/admin/sources/{uuid4()}")).status_code == 404
 
     jobs = (await client.get("/api/admin/jobs", params={"limit": 100})).json()["items"]
