@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.api.errors import ApiException
+from app.core.config import get_settings
 from app.core.enums import (
     AuditAction,
     AuditEntityType,
@@ -22,6 +23,7 @@ from app.db.base import utc_now
 from app.db.models.content import Document, DocumentTag, Tag
 from app.db.models.identity import User
 from app.db.models.operations import AuditEvent, Job
+from app.processing.chunking import stable_chunk_key
 from app.schemas.base import pagination
 from app.schemas.management import (
     BackgroundJobOut,
@@ -37,6 +39,7 @@ from app.schemas.management import (
 )
 from app.services.audit import add_audit_event
 from app.services.content import document_statement, get_document
+from app.services.index_jobs import enqueue_document_reindex
 from app.services.management_serializers import (
     audit_to_schema,
     job_to_schema,
@@ -205,6 +208,15 @@ async def update_metadata(
     document.last_edited_by = actor.id
     document.last_edited_at = utc_now()
     await replace_managed_tags(db, document, payload.managed_tags)
+    await _rebase_chunks_after_editor_change(document)
+    document.bm25_status = _outdated(document.bm25_status)
+    document.vector_status = _outdated(document.vector_status)
+    await enqueue_document_reindex(
+        db,
+        document,
+        settings=get_settings(),
+        created_by=actor.id,
+    )
     await add_audit_event(
         db,
         request,
@@ -242,6 +254,16 @@ async def hide_document(
     document.last_edited_by = actor.id
     document.last_edited_at = utc_now()
     document.version += 1
+    await _rebase_chunks_after_editor_change(document)
+    document.bm25_status = _outdated(document.bm25_status)
+    document.vector_status = _outdated(document.vector_status)
+    await enqueue_document_reindex(
+        db,
+        document,
+        settings=get_settings(),
+        created_by=actor.id,
+        force=True,
+    )
     await add_audit_event(
         db,
         request,
@@ -274,6 +296,16 @@ async def restore_document(
     document.last_edited_by = actor.id
     document.last_edited_at = utc_now()
     document.version += 1
+    await _rebase_chunks_after_editor_change(document)
+    document.bm25_status = _outdated(document.bm25_status)
+    document.vector_status = _outdated(document.vector_status)
+    await enqueue_document_reindex(
+        db,
+        document,
+        settings=get_settings(),
+        created_by=actor.id,
+        force=True,
+    )
     await add_audit_event(
         db,
         request,
@@ -394,6 +426,16 @@ async def bulk_documents(
                 document.version += 1
                 document.last_edited_by = actor.id
                 document.last_edited_at = utc_now()
+                await _rebase_chunks_after_editor_change(document)
+                document.bm25_status = _outdated(document.bm25_status)
+                document.vector_status = _outdated(document.vector_status)
+                await enqueue_document_reindex(
+                    db,
+                    document,
+                    settings=get_settings(),
+                    created_by=actor.id,
+                    force=True,
+                )
                 items.append(BulkDocumentItemOut(document_id=document_id, outcome="SUCCESS"))
         except ApiException as exc:
             items.append(
@@ -432,6 +474,36 @@ async def bulk_documents(
         failed_count=failed_count,
         items=items,
     )
+
+
+async def _rebase_chunks_after_editor_change(document: Document) -> None:
+    chunks = list(document.chunks)
+    if not chunks:
+        return
+    tags = sorted({link.tag.normalized_name for link in document.tag_links})
+    labels = {
+        "QUESTION": "Вопрос",
+        "ACCEPTED_ANSWER": "Принятый ответ",
+        "ANSWER": "Дополнительный ответ",
+        "MIXED": "Смешанный фрагмент",
+    }
+    for chunk in chunks:
+        chunk.document_version = document.version
+        chunk.chunk_key = stable_chunk_key(
+            document.id,
+            document.version,
+            chunk.ordinal,
+            chunk.content_hash,
+        )
+        chunk.contextual_text = (
+            f"# {document.normalized_title}\n"
+            f"Теги: {', '.join(tags)}\n"
+            f"Раздел: {labels.get(chunk.section_type, chunk.section_type)}\n\n{chunk.text}"
+        )
+
+
+def _outdated(value: str) -> IndexStatus:
+    return IndexStatus.NOT_INDEXED if value == IndexStatus.NOT_INDEXED else IndexStatus.OUTDATED
 
 
 async def list_jobs(

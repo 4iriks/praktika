@@ -146,3 +146,6 @@ HTTP adapter сообщает AuthProvider о 401. Provider переводит a
 только user/role-sensitive TanStack Query cache. Redirect выполняется route/auth flow, поэтому
 глобального redirect loop нет. 403 сохраняется как typed `ApiError` и ведёт UI на доступный 403
 scenario.
+# Search index API (Stage 6.1)
+
+ADMIN endpoints: `GET /api/admin/indexes`, `/{id}`, `/active`, `/stats`; `POST /full-reindex`, `/{id}/validate`, `/cleanup`. Mutations используют текущие HttpOnly session + CSRF и возвращают существующий `BackgroundJob` contract. USER/EDITOR получают 403. Search/ask до 6.2/6.3 по-прежнему возвращают 501.

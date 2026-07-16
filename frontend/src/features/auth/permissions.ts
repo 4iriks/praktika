@@ -30,6 +30,8 @@ export const permissionMatrix: PermissionMap = {
     'AUDIT_VIEW',
     'SYSTEM_VIEW',
     'SYSTEM_SETTINGS_MANAGE',
+    'SEARCH_INDEX_VIEW',
+    'SEARCH_INDEX_MANAGE',
   ],
 };
 

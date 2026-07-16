@@ -108,3 +108,6 @@ batch-запросами до 100 ID, соблюдает `has_more`, quota, back
 Полный импорт 25 000 веток автоматически не запускается; см. [runbook](docs/ingestion-runbook.md).
 BM25, HNSW, embeddings, Qdrant, Ollama и RAG не имитируются через SQL. `/api/search` и
 `/api/ask` остаются честными 501 в HTTP mode до Этапа 6.
+# Этап 6.1
+
+Проект получил self-hosted Qdrant, dense embeddings через Ollama, native sparse BM25, отдельный durable indexer и blue-green переиндексацию. PostgreSQL остаётся source of truth; Qdrant можно восстановить. Поиск/RAG не объявлены готовыми: `/api/search` и `/api/ask` остаются 501 до 6.2/6.3.

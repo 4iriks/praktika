@@ -43,6 +43,9 @@ import type {
   SavedDocumentsResponse,
   SearchRequest,
   SearchResponse,
+  SearchIndexStats,
+  SearchIndexVersion,
+  SearchIndexVersionsResponse,
   Source,
   SourceConnectionResult,
   SourceFilters,
@@ -144,6 +147,13 @@ export interface ApiClient {
   retryJob(jobId: string): Promise<BackgroundJob>;
   cancelJob(jobId: string): Promise<BackgroundJob>;
   startFullReindex(): Promise<BackgroundJob>;
+
+  getSearchIndexes(signal?: AbortSignal): Promise<SearchIndexVersionsResponse>;
+  getActiveSearchIndex(signal?: AbortSignal): Promise<SearchIndexVersion | null>;
+  getSearchIndexStats(signal?: AbortSignal): Promise<SearchIndexStats>;
+  startSearchIndexFullReindex(): Promise<BackgroundJob>;
+  validateSearchIndex(indexVersionId: string): Promise<BackgroundJob>;
+  cleanupSearchIndexes(dryRun: boolean, confirm?: boolean): Promise<BackgroundJob>;
 
   getAuditEvents(filters: AuditFilters, signal?: AbortSignal): Promise<AuditEventsResponse>;
   getAuditEvent(eventId: string, signal?: AbortSignal): Promise<AuditEvent>;

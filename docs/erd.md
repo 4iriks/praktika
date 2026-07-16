@@ -144,3 +144,15 @@ self-reference, retry — self-reference job. Revisions и chunks удаляют
 document. Answers физически сохраняются и reconciliation использует `source_missing`.
 
 Credential/session/API key отсутствуют в ingestion tables, checkpoints, events и failures.
+# Дополнение Этапа 6.1
+
+```mermaid
+erDiagram
+  JOBS ||--o| SEARCH_INDEX_VERSIONS : builds
+  USERS ||--o{ SEARCH_INDEX_VERSIONS : creates
+  SEARCH_INDEX_VERSIONS ||--o{ SEARCH_INDEX_ENTRIES : contains
+  DOCUMENT_CHUNKS ||--o{ SEARCH_INDEX_ENTRIES : indexed_as
+  DOCUMENTS ||--o{ SEARCH_INDEX_ENTRIES : groups
+```
+
+`search_index_versions` хранит version/config/status физической Qdrant collection. `search_index_entries` — идемпотентное соответствие PostgreSQL chunk → Qdrant point; vectors в PostgreSQL не дублируются.

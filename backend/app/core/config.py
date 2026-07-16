@@ -19,7 +19,7 @@ class Settings(BaseSettings):
         default="development", alias="APP_ENV"
     )
     app_name: str = Field(default="PyAnswer API", alias="APP_NAME")
-    app_version: str = Field(default="0.5.0", alias="APP_VERSION")
+    app_version: str = Field(default="0.6.0", alias="APP_VERSION")
     debug: bool = Field(default=False, alias="DEBUG")
     database_url: str = Field(
         default="postgresql+asyncpg://pyanswer:pyanswer@localhost:5432/pyanswer",
@@ -125,6 +125,75 @@ class Settings(BaseSettings):
         default=30, ge=1, le=300, alias="WORKER_SHUTDOWN_TIMEOUT_SECONDS"
     )
 
+    qdrant_url: str = Field(default="http://localhost:6333", alias="QDRANT_URL")
+    qdrant_server_version: str = Field(default="1.18.2", alias="QDRANT_SERVER_VERSION")
+    qdrant_client_version: str = Field(default="1.18.0", alias="QDRANT_CLIENT_VERSION")
+    qdrant_alias: str = Field(default="pyanswer_chunks_current", alias="QDRANT_ALIAS")
+    qdrant_collection_prefix: str = Field(
+        default="pyanswer_chunks", alias="QDRANT_COLLECTION_PREFIX"
+    )
+    qdrant_timeout_seconds: float = Field(default=30, gt=0, le=300, alias="QDRANT_TIMEOUT_SECONDS")
+    qdrant_max_retries: int = Field(default=3, ge=0, le=10, alias="QDRANT_MAX_RETRIES")
+
+    embedding_provider: Literal["ollama"] = Field(default="ollama", alias="EMBEDDING_PROVIDER")
+    embedding_model: str = Field(default="qwen3-embedding:0.6b", alias="EMBEDDING_MODEL")
+    embedding_dimensions: int = Field(default=1024, ge=1, alias="EMBEDDING_DIMENSIONS")
+    embedding_batch_size: int = Field(default=16, ge=1, le=128, alias="EMBEDDING_BATCH_SIZE")
+    embedding_timeout_seconds: float = Field(
+        default=120, gt=0, le=900, alias="EMBEDDING_TIMEOUT_SECONDS"
+    )
+    embedding_max_retries: int = Field(default=3, ge=0, le=10, alias="EMBEDDING_MAX_RETRIES")
+    embedding_keep_alive: str = Field(default="5m", alias="EMBEDDING_KEEP_ALIVE")
+    embedding_max_input_tokens: int = Field(
+        default=8192, ge=128, le=65536, alias="EMBEDDING_MAX_INPUT_TOKENS"
+    )
+    embedding_query_instruction: str = Field(
+        default=(
+            "Instruct: Given a Russian Python programming question, retrieve passages that "
+            "directly help answer the query\nQuery: {query}"
+        ),
+        alias="EMBEDDING_QUERY_INSTRUCTION",
+    )
+    ollama_base_url: str = Field(default="http://localhost:11434", alias="OLLAMA_BASE_URL")
+
+    sparse_provider: Literal["qdrant_bm25", "fastembed_bm25"] = Field(
+        default="qdrant_bm25", alias="SPARSE_PROVIDER"
+    )
+    sparse_model: str = Field(default="qdrant/bm25", alias="SPARSE_MODEL")
+
+    index_schema_version: str = Field(default="6.1", alias="INDEX_SCHEMA_VERSION")
+    index_chunk_schema_version: str = Field(default="5.2", alias="INDEX_CHUNK_SCHEMA_VERSION")
+    index_payload_schema_version: str = Field(default="6.1", alias="INDEX_PAYLOAD_SCHEMA_VERSION")
+    index_embed_batch_size: int = Field(default=16, ge=1, le=128, alias="INDEX_EMBED_BATCH_SIZE")
+    index_qdrant_upsert_batch_size: int = Field(
+        default=64, ge=1, le=512, alias="INDEX_QDRANT_UPSERT_BATCH_SIZE"
+    )
+    index_max_concurrent_embed_requests: int = Field(
+        default=1, ge=1, le=8, alias="INDEX_MAX_CONCURRENT_EMBED_REQUESTS"
+    )
+    index_max_concurrent_qdrant_requests: int = Field(
+        default=1, ge=1, le=8, alias="INDEX_MAX_CONCURRENT_QDRANT_REQUESTS"
+    )
+    index_job_max_attempts: int = Field(default=5, ge=1, le=20, alias="INDEX_JOB_MAX_ATTEMPTS")
+    index_request_timeout_seconds: float = Field(
+        default=120, gt=0, le=900, alias="INDEX_REQUEST_TIMEOUT_SECONDS"
+    )
+    index_hnsw_m: int = Field(default=16, ge=4, le=128, alias="INDEX_HNSW_M")
+    index_hnsw_ef_construct: int = Field(
+        default=100, ge=16, le=1024, alias="INDEX_HNSW_EF_CONSTRUCT"
+    )
+    index_retain_retired_count: int = Field(
+        default=1, ge=0, le=10, alias="INDEX_RETAIN_RETIRED_COUNT"
+    )
+    index_failed_collection_retention_hours: int = Field(
+        default=24, ge=1, le=720, alias="INDEX_FAILED_COLLECTION_RETENTION_HOURS"
+    )
+    index_auto_cleanup: bool = Field(default=False, alias="INDEX_AUTO_CLEANUP")
+    index_allow_possible_duplicates: bool = Field(
+        default=False, alias="INDEX_ALLOW_POSSIBLE_DUPLICATES"
+    )
+    auto_enqueue_document_reindex: bool = Field(default=True, alias="AUTO_ENQUEUE_DOCUMENT_REINDEX")
+
     document_revision_limit: int = Field(default=10, ge=1, le=100, alias="DOCUMENT_REVISION_LIMIT")
     chunk_target_tokens: int = Field(default=650, ge=50, le=4000, alias="CHUNK_TARGET_TOKENS")
     chunk_max_tokens: int = Field(default=900, ge=100, le=6000, alias="CHUNK_MAX_TOKENS")
@@ -177,6 +246,12 @@ class Settings(BaseSettings):
             raise ValueError("CHUNK_OVERLAP_TOKENS должен быть меньше CHUNK_TARGET_TOKENS")
         if self.chunk_min_tokens > self.chunk_target_tokens:
             raise ValueError("CHUNK_MIN_TOKENS не может превышать CHUNK_TARGET_TOKENS")
+        if self.embedding_batch_size > self.index_qdrant_upsert_batch_size:
+            raise ValueError(
+                "EMBEDDING_BATCH_SIZE не может превышать INDEX_QDRANT_UPSERT_BATCH_SIZE"
+            )
+        if "{query}" not in self.embedding_query_instruction:
+            raise ValueError("EMBEDDING_QUERY_INSTRUCTION должен содержать {query}")
         return self
 
 

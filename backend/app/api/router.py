@@ -2,6 +2,7 @@ from fastapi import APIRouter
 
 from app.api.routes import (
     admin_audit,
+    admin_indexes,
     admin_ingestion,
     admin_jobs,
     admin_sources,
@@ -35,6 +36,7 @@ api_router.include_router(dashboards.router)
 api_router.include_router(admin_users.router)
 api_router.include_router(admin_sources.router)
 api_router.include_router(admin_ingestion.router)
+api_router.include_router(admin_indexes.router)
 api_router.include_router(admin_jobs.router)
 api_router.include_router(admin_audit.router)
 api_router.include_router(admin_system.router)

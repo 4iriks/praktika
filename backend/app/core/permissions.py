@@ -32,6 +32,8 @@ PERMISSION_MATRIX: dict[UserRole, frozenset[Permission]] = {
             Permission.AUDIT_VIEW,
             Permission.SYSTEM_VIEW,
             Permission.SYSTEM_SETTINGS_MANAGE,
+            Permission.SEARCH_INDEX_VIEW,
+            Permission.SEARCH_INDEX_MANAGE,
         }
     ),
 }

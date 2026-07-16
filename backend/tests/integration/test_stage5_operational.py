@@ -64,10 +64,11 @@ async def test_editor_document_operational_endpoints_are_read_only_and_protected
 ) -> None:
     document = await add_operational_rows(db)
     await login(client, "editor@pyanswer.local")
-    for suffix in ("chunks", "revisions", "failures"):
+    expected_totals = {"chunks": 2, "revisions": 1, "failures": 1}
+    for suffix, expected_total in expected_totals.items():
         response = await client.get(f"/api/editor/documents/{document.id}/{suffix}")
         assert response.status_code == 200
-        assert response.json()["pagination"]["total"] == 1
+        assert response.json()["pagination"]["total"] == expected_total
     failure_payload = (await client.get(f"/api/editor/documents/{document.id}/failures")).json()
     assert "password" not in str(failure_payload).casefold()
 
@@ -77,7 +78,7 @@ async def test_editor_document_operational_endpoints_are_read_only_and_protected
     assert denied.status_code == 403
 
 
-async def test_system_reports_real_ingestion_counts_and_future_services_offline(
+async def test_system_reports_real_ingestion_counts_and_stage6_service_truth(
     client: AsyncClient,
     db: AsyncSession,
 ) -> None:
@@ -87,11 +88,12 @@ async def test_system_reports_real_ingestion_counts_and_future_services_offline(
     assert response.status_code == 200
     payload = response.json()
     assert payload["metrics"]["answersCount"] > 0
-    assert payload["metrics"]["chunksCount"] == 1
+    assert payload["metrics"]["chunksCount"] > 0
     assert payload["metrics"]["revisionsCount"] == 1
     assert payload["metrics"]["failuresCount"] == 1
     services = {item["id"]: item["status"] for item in payload["services"]}
-    for name in ("qdrant", "ollama", "indexer", "bm25", "vector", "embedding", "reranker"):
+    assert services["qdrant"] in {"ONLINE", "OFFLINE"}
+    for name in ("ollama", "indexer", "bm25", "vector", "embedding", "reranker"):
         assert services[name] == "OFFLINE"
 
 

@@ -27,6 +27,7 @@ def document_statement() -> Select[tuple[Document]]:
         selectinload(Document.tag_links).selectinload(DocumentTag.tag),
         selectinload(Document.source),
         selectinload(Document.editor),
+        selectinload(Document.chunks),
     )
 
 

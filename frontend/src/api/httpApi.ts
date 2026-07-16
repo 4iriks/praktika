@@ -42,6 +42,9 @@ import type {
   SavedDocumentsResponse,
   SearchRequest,
   SearchResponse,
+  SearchIndexStats,
+  SearchIndexVersion,
+  SearchIndexVersionsResponse,
   Source,
   SourceConnectionResult,
   SourceFilters,
@@ -553,6 +556,33 @@ export const httpApi: ApiClient = {
   },
   startFullReindex() {
     return request<BackgroundJob>('/admin/jobs/full-reindex', { method: 'POST' });
+  },
+  getSearchIndexes(signal) {
+    return request<SearchIndexVersionsResponse>('/admin/indexes', { signal });
+  },
+  getActiveSearchIndex(signal) {
+    return request<SearchIndexVersion | null>('/admin/indexes/active', { signal });
+  },
+  getSearchIndexStats(signal) {
+    return request<SearchIndexStats>('/admin/indexes/stats', { signal });
+  },
+  startSearchIndexFullReindex() {
+    return request<BackgroundJob>('/admin/indexes/full-reindex', {
+      method: 'POST',
+      body: JSON.stringify({ confirm: true }),
+    });
+  },
+  validateSearchIndex(indexVersionId) {
+    return request<BackgroundJob>(
+      '/admin/indexes/' + encodeURIComponent(indexVersionId) + '/validate',
+      { method: 'POST', body: JSON.stringify({ confirm: true }) },
+    );
+  },
+  cleanupSearchIndexes(dryRun, confirm = false) {
+    return request<BackgroundJob>('/admin/indexes/cleanup', {
+      method: 'POST',
+      body: JSON.stringify({ dryRun, confirm }),
+    });
   },
   getAuditEvents(filters, signal) {
     return request<AuditEventsResponse>('/admin/audit?' + auditQuery(filters), { signal });

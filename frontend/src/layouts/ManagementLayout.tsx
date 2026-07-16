@@ -61,6 +61,12 @@ const links: ManagementLink[] = [
   { to: '/admin/users', label: 'Пользователи', icon: Users, permission: 'USERS_MANAGE' },
   { to: '/admin/sources', label: 'Источники', icon: Database, permission: 'SOURCES_MANAGE' },
   { to: '/admin/jobs', label: 'Все задания', icon: Boxes, permission: 'ADMIN_JOBS_MANAGE' },
+  {
+    to: '/admin/indexes',
+    label: 'Поисковый индекс',
+    icon: ShieldCheck,
+    permission: 'SEARCH_INDEX_VIEW',
+  },
   { to: '/admin/audit', label: 'Аудит', icon: FileClock, permission: 'AUDIT_VIEW' },
   { to: '/admin/system', label: 'Система', icon: ServerCog, permission: 'SYSTEM_VIEW' },
 ];
@@ -222,6 +228,7 @@ function breadcrumb(pathname: string): string {
     '/admin/jobs': 'Администратор / Задания',
     '/admin/audit': 'Администратор / Аудит',
     '/admin/system': 'Администратор / Система',
+    '/admin/indexes': 'Администратор / Поисковый индекс',
   };
   if (pathname.startsWith('/editor/documents/')) return 'Редактор / Документы / Карточка';
   return labels[pathname] ?? 'PyAnswer / Управление';

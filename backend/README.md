@@ -229,3 +229,6 @@ claim, lease, heartbeat, checkpoint, cancellation и retry. Operational API и C
 Qdrant, BM25, embeddings, HNSW, reranker, Ollama и RAG не настроены. `/api/search` и `/api/ask`
 не подменяют будущий движок SQL-поиском и продолжают возвращать 501. Frontend mock mode остаётся
 демонстрационным режимом по умолчанию.
+# Stage 6.1
+
+Добавлены Qdrant 1.18.2, Ollama embeddings, отдельный indexer, versioned collections и blue-green alias switch. Команды: `make qdrant-up`, `make embedding-model-pull`, `make indexer-up`. Модель и полный rebuild не запускаются автоматически; `/api/search` и `/api/ask` пока 501.

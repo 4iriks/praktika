@@ -304,3 +304,7 @@ docker run --rm -p 8080:80 pyanswer-frontend
 Multi-stage image собирает Vite bundle и отдаёт его через nginx. Конфигурация сохраняет React
 Router fallback, immutable assets cache и `/healthz`. Корневой `compose.yaml` Этапа 4 добавляет
 PostgreSQL и backend; frontend image остаётся самостоятельным и не включён в compose этого этапа.
+
+# Stage 6.1
+
+В ADMIN-контуре доступна `/admin/indexes`: фактический Qdrant/model/indexer status, версии, full rebuild, validation и безопасный cleanup. Пользовательский HTTP search подключается в 6.2; mock mode сохранён.

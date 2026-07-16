@@ -18,7 +18,15 @@ from app.core.enums import (
 from app.db.base import utc_now
 from app.db.models.content import Answer, Document, DocumentChunk, DocumentRevision
 from app.db.models.identity import User
-from app.db.models.operations import IngestionFailure, Job, SystemSetting, WorkerInstance
+from app.db.models.operations import (
+    IngestionFailure,
+    Job,
+    SearchIndexVersion,
+    SystemSetting,
+    WorkerInstance,
+)
+from app.integrations.embeddings import OllamaEmbeddingProvider
+from app.integrations.qdrant import QdrantIndexClient
 from app.schemas.content import PublicAccessPolicyOut
 from app.schemas.management import (
     SystemHardwareOut,
@@ -183,26 +191,110 @@ async def system_status(db: AsyncSession) -> SystemStatusOut:
             message=worker_message,
         )
     )
-    for identifier, name in [
-        ("qdrant", "Qdrant"),
-        ("ollama", "Ollama"),
-        ("indexer", "Indexer"),
-        ("bm25", "BM25 index"),
-        ("vector", "Vector index"),
-        ("embedding", "Embedding model"),
-        ("reranker", "Reranker"),
-    ]:
-        services.append(
+    qdrant_client = QdrantIndexClient(config)
+    embedding_provider = OllamaEmbeddingProvider(config)
+    try:
+        qdrant_health = await qdrant_client.health()
+        embedding_health = await embedding_provider.health()
+    finally:
+        await qdrant_client.close()
+        await embedding_provider.close()
+    services.extend(
+        [
             SystemServiceOut(
-                id=identifier,
-                name=name,
+                id="qdrant",
+                name="Qdrant",
+                status="ONLINE" if qdrant_health.online else "OFFLINE",
+                latency_ms=0,
+                version=qdrant_health.version or config.qdrant_server_version,
+                last_check_at=now,
+                message=qdrant_health.message,
+            ),
+            SystemServiceOut(
+                id="ollama",
+                name="Ollama",
+                status="ONLINE" if embedding_health.online else "OFFLINE",
+                latency_ms=0,
+                version="local",
+                last_check_at=now,
+                message=embedding_health.message,
+            ),
+            SystemServiceOut(
+                id="embedding",
+                name="Embedding model",
+                status=(
+                    "ONLINE"
+                    if embedding_health.online and embedding_health.model_installed
+                    else "OFFLINE"
+                ),
+                latency_ms=0,
+                version=config.embedding_model,
+                last_check_at=now,
+                message=embedding_health.message,
+            ),
+        ]
+    )
+    indexer_worker = await db.scalar(
+        select(WorkerInstance)
+        .where(WorkerInstance.capabilities.contains(["search_index"]))
+        .order_by(WorkerInstance.heartbeat_at.desc())
+        .limit(1)
+    )
+    indexer_online = bool(
+        indexer_worker
+        and indexer_worker.status == WorkerInstanceStatus.RUNNING
+        and now - indexer_worker.heartbeat_at
+        <= timedelta(seconds=config.worker_heartbeat_seconds * 2)
+    )
+    active_index = await db.scalar(
+        select(SearchIndexVersion).where(SearchIndexVersion.status == "ACTIVE")
+    )
+    services.extend(
+        [
+            SystemServiceOut(
+                id="indexer",
+                name="Indexer",
+                status="ONLINE" if indexer_online else "OFFLINE",
+                latency_ms=0,
+                version=indexer_worker.version if indexer_worker else config.app_version,
+                last_check_at=indexer_worker.heartbeat_at if indexer_worker else now,
+                message=(
+                    "Indexer принимает search_index jobs"
+                    if indexer_online
+                    else "Нет heartbeat indexer"
+                ),
+            ),
+            SystemServiceOut(
+                id="bm25",
+                name="BM25 index",
+                status="ONLINE" if active_index else "OFFLINE",
+                latency_ms=0,
+                version=config.sparse_model,
+                last_check_at=now,
+                message=(
+                    "Named sparse vector активен" if active_index else "Active index отсутствует"
+                ),
+            ),
+            SystemServiceOut(
+                id="vector",
+                name="Vector index",
+                status="ONLINE" if active_index else "OFFLINE",
+                latency_ms=0,
+                version=config.embedding_model,
+                last_check_at=now,
+                message="Dense HNSW index активен" if active_index else "Active index отсутствует",
+            ),
+            SystemServiceOut(
+                id="reranker",
+                name="Reranker",
                 status="OFFLINE",
                 latency_ms=0,
                 version="not configured",
                 last_check_at=now,
-                message="Не настроено на Этапе 5",
-            )
-        )
+                message="Будет подключён в части 6.2",
+            ),
+        ]
+    )
     return SystemStatusOut(
         services=services,
         metrics=SystemMetricsOut(

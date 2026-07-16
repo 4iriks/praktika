@@ -16,6 +16,7 @@ import type {
   SearchRequest,
   SearchResponse,
   SearchResult,
+  SearchIndexVersion,
   UpdateProfileRequest,
 } from '../types';
 import { clamp } from '../utils/format';
@@ -276,6 +277,27 @@ function buildAnswer(question: string, documents: Document[]): string {
 function responseId(): string {
   return 'rag-' + (globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2));
 }
+
+const mockIndexVersion: SearchIndexVersion = {
+  id: '00000000-0000-4000-8000-000000000601',
+  collectionName: 'pyanswer_chunks_mock_6_1',
+  aliasName: 'pyanswer_chunks_current',
+  status: 'ACTIVE',
+  schemaVersion: '6.1',
+  schemaHash: 'mock-schema-hash',
+  embeddingProvider: 'ollama',
+  embeddingModel: 'qwen3-embedding:0.6b',
+  embeddingDimensions: 1024,
+  sparseProvider: 'qdrant_bm25',
+  sparseModel: 'qdrant/bm25',
+  qdrantServerVersion: '1.18.2',
+  qdrantClientVersion: '1.18.0',
+  pointCount: 0,
+  eligibleChunkCount: 0,
+  createdAt: new Date(0).toISOString(),
+  activatedAt: new Date(0).toISOString(),
+  config: {},
+};
 
 async function askQuestion(
   request: AskRequest,
@@ -728,6 +750,53 @@ export const mockApi: ApiClient = {
     await initializeData();
     await delay(150);
     maybeFail();
+    return mockManagementRepository.startFullReindex();
+  },
+  async getSearchIndexes(signal) {
+    await initializeData();
+    await delay(80, signal);
+    return {
+      items: [mockIndexVersion],
+      pagination: { page: 1, pageSize: 20, total: 1, totalPages: 1 },
+    };
+  },
+  async getActiveSearchIndex(signal) {
+    await initializeData();
+    await delay(60, signal);
+    return mockIndexVersion;
+  },
+  async getSearchIndexStats(signal) {
+    await initializeData();
+    await delay(80, signal);
+    return {
+      aliasName: mockIndexVersion.aliasName,
+      aliasTarget: mockIndexVersion.collectionName,
+      activeVersion: mockIndexVersion,
+      eligibleChunks: 0,
+      indexedChunks: 0,
+      staleChunks: 0,
+      pointsCount: 0,
+      qdrantOnline: false,
+      qdrantVersion: mockIndexVersion.qdrantServerVersion,
+      qdrantMessage: 'Mock-режим не подключается к Qdrant',
+      embeddingProvider: 'ollama',
+      embeddingModel: mockIndexVersion.embeddingModel,
+      embeddingDimensions: 1024,
+      embeddingOnline: false,
+      embeddingModelInstalled: false,
+      indexerOnline: false,
+    };
+  },
+  async startSearchIndexFullReindex() {
+    await initializeData();
+    return mockManagementRepository.startFullReindex();
+  },
+  async validateSearchIndex() {
+    await initializeData();
+    return mockManagementRepository.startFullReindex();
+  },
+  async cleanupSearchIndexes() {
+    await initializeData();
     return mockManagementRepository.startFullReindex();
   },
   async getAuditEvents(filters, signal) {

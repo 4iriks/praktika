@@ -26,8 +26,34 @@ x-ingestion-environment: &ingestion-environment
   WORKER_MAX_ATTEMPTS: ${WORKER_MAX_ATTEMPTS:-5}
   WORKER_SHUTDOWN_TIMEOUT_SECONDS: ${WORKER_SHUTDOWN_TIMEOUT_SECONDS:-30}
 
+x-search-environment: &search-environment
+  QDRANT_URL: ${QDRANT_URL:-http://qdrant:6333}
+  QDRANT_SERVER_VERSION: ${QDRANT_SERVER_VERSION:-1.18.2}
+  QDRANT_CLIENT_VERSION: ${QDRANT_CLIENT_VERSION:-1.18.0}
+  QDRANT_ALIAS: ${QDRANT_ALIAS:-pyanswer_chunks_current}
+  QDRANT_COLLECTION_PREFIX: ${QDRANT_COLLECTION_PREFIX:-pyanswer_chunks}
+  QDRANT_TIMEOUT_SECONDS: ${QDRANT_TIMEOUT_SECONDS:-30}
+  QDRANT_MAX_RETRIES: ${QDRANT_MAX_RETRIES:-3}
+  OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama:11434}
+  EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-ollama}
+  EMBEDDING_MODEL: ${EMBEDDING_MODEL:-qwen3-embedding:0.6b}
+  EMBEDDING_DIMENSIONS: ${EMBEDDING_DIMENSIONS:-1024}
+  EMBEDDING_BATCH_SIZE: ${EMBEDDING_BATCH_SIZE:-16}
+  EMBEDDING_TIMEOUT_SECONDS: ${EMBEDDING_TIMEOUT_SECONDS:-120}
+  EMBEDDING_MAX_RETRIES: ${EMBEDDING_MAX_RETRIES:-3}
+  EMBEDDING_KEEP_ALIVE: ${EMBEDDING_KEEP_ALIVE:-5m}
+  SPARSE_PROVIDER: ${SPARSE_PROVIDER:-qdrant_bm25}
+  SPARSE_MODEL: ${SPARSE_MODEL:-qdrant/bm25}
+  INDEX_SCHEMA_VERSION: ${INDEX_SCHEMA_VERSION:-6.1}
+  INDEX_EMBED_BATCH_SIZE: ${INDEX_EMBED_BATCH_SIZE:-16}
+  INDEX_QDRANT_UPSERT_BATCH_SIZE: ${INDEX_QDRANT_UPSERT_BATCH_SIZE:-64}
+  INDEX_JOB_MAX_ATTEMPTS: ${INDEX_JOB_MAX_ATTEMPTS:-5}
+  INDEX_RETAIN_RETIRED_COUNT: ${INDEX_RETAIN_RETIRED_COUNT:-1}
+  INDEX_AUTO_CLEANUP: ${INDEX_AUTO_CLEANUP:-false}
+  AUTO_ENQUEUE_DOCUMENT_REINDEX: ${AUTO_ENQUEUE_DOCUMENT_REINDEX:-true}
+
 x-backend-image: &backend-image
-  image: pyanswer-backend:${APP_VERSION:-0.5.0}
+  image: pyanswer-backend:${APP_VERSION:-0.6.0}
   build:
     context: ./backend
     dockerfile: Dockerfile
@@ -52,16 +78,45 @@ services:
       retries: 20
       start_period: 5s
 
+  qdrant:
+    image: qdrant/qdrant:v1.18.2
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${QDRANT_PORT:-6333}:6333"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c ':> /dev/tcp/127.0.0.1/6333'"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  ollama:
+    image: ollama/ollama:0.32.0
+    restart: unless-stopped
+    volumes:
+      - ollama_models:/root/.ollama
+    environment:
+      OLLAMA_MAX_LOADED_MODELS: ${OLLAMA_MAX_LOADED_MODELS:-1}
+      OLLAMA_NUM_PARALLEL: ${OLLAMA_NUM_PARALLEL:-1}
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+
   backend:
     <<: *backend-image
     restart: unless-stopped
     init: true
     stop_grace_period: 25s
     environment:
-      <<: *ingestion-environment
+      <<: [*ingestion-environment, *search-environment]
       APP_ENV: ${APP_ENV:-development}
       APP_NAME: ${APP_NAME:-PyAnswer API}
-      APP_VERSION: ${APP_VERSION:-0.5.0}
+      APP_VERSION: ${APP_VERSION:-0.6.0}
       DEBUG: ${DEBUG:-false}
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-pyanswer}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-pyanswer}
       FRONTEND_ORIGINS: ${FRONTEND_ORIGINS:-["http://localhost:5173"]}
@@ -106,7 +161,7 @@ services:
       <<: *ingestion-environment
       APP_ENV: ${APP_ENV:-development}
       APP_NAME: ${APP_NAME:-PyAnswer Worker}
-      APP_VERSION: ${APP_VERSION:-0.5.0}
+      APP_VERSION: ${APP_VERSION:-0.6.0}
       DEBUG: ${DEBUG:-false}
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-pyanswer}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-pyanswer}
       FRONTEND_ORIGINS: ${FRONTEND_ORIGINS:-["http://localhost:5173"]}
@@ -117,5 +172,32 @@ services:
       postgres:
         condition: service_healthy
 
+  indexer:
+    <<: *backend-image
+    restart: unless-stopped
+    init: true
+    stop_grace_period: ${WORKER_SHUTDOWN_TIMEOUT_SECONDS:-30}s
+    command: ["python", "-m", "app.indexer"]
+    environment:
+      <<: [*ingestion-environment, *search-environment]
+      APP_ENV: ${APP_ENV:-development}
+      APP_NAME: ${APP_NAME:-PyAnswer Indexer}
+      APP_VERSION: ${APP_VERSION:-0.6.0}
+      DEBUG: ${DEBUG:-false}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-pyanswer}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-pyanswer}
+      FRONTEND_ORIGINS: ${FRONTEND_ORIGINS:-["http://localhost:5173"]}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      COOKIE_SAMESITE: ${COOKIE_SAMESITE:-lax}
+      SEED_DEMO_DATA: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
+
 volumes:
   postgres_data:
+  qdrant_data:
+  ollama_models:

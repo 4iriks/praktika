@@ -12,16 +12,18 @@ from app.core.enums import (
     AuditAction,
     AuditEntityType,
     AuditOutcome,
+    DeduplicationStatus,
     DocumentStatus,
     IndexStatus,
     JobStage,
     JobStatus,
     JobType,
+    ProcessingStatus,
     UserRole,
 )
 from app.core.security import PasswordService
 from app.db.base import utc_now
-from app.db.models.content import Answer, Document, DocumentTag, Tag
+from app.db.models.content import Answer, Document, DocumentChunk, DocumentTag, Tag
 from app.db.models.identity import (
     Feedback,
     Role,
@@ -32,6 +34,7 @@ from app.db.models.identity import (
 )
 from app.db.models.operations import AuditEvent, Job, Source
 from app.db.repositories.users import normalize_email
+from app.processing.chunking import stable_chunk_key
 from app.seed.bootstrap import bootstrap_all
 
 DEMO_PASSWORD = "Demo123!"
@@ -161,10 +164,26 @@ async def seed_documents(db: AsyncSession, source: Source) -> list[Document]:
             accepted_answer_external_id=f"answer-{index}-1" if index % 4 else None,
             has_code=True,
             status=statuses[index - 1],
-            bm25_status=IndexStatus.READY if index < 16 else IndexStatus.NOT_INDEXED,
-            vector_status=IndexStatus.READY if index < 15 else IndexStatus.OUTDATED,
-            chunks_count=3 + index % 4,
+            bm25_status=IndexStatus.NOT_INDEXED,
+            vector_status=IndexStatus.NOT_INDEXED,
+            chunks_count=1,
             content_hash=hashlib.sha256(f"document-{index}".encode()).hexdigest(),
+            canonical_text=(
+                f"# {title}\n\nТеги: python, {tag_name}\n\n## Вопрос\n\n"
+                f"Как правильно решить задачу «{title.lower()}» в Python?\n\n"
+                f"## Принятый ответ\n\nИспользуйте стандартные средства Python.\n\n"
+                f"```python\n{code}\n```"
+            ),
+            metadata_hash=hashlib.sha256(f"metadata-{index}".encode()).hexdigest(),
+            processing_status=(
+                ProcessingStatus.FAILED
+                if statuses[index - 1] == DocumentStatus.FAILED
+                else ProcessingStatus.CHUNKED
+            ),
+            deduplication_status=DeduplicationStatus.UNIQUE,
+            processing_error=(
+                "Ошибка подготовки" if statuses[index - 1] == DocumentStatus.FAILED else None
+            ),
             editorial_note="",
             hidden_reason="Проверка модерации"
             if statuses[index - 1] == DocumentStatus.HIDDEN
@@ -172,7 +191,7 @@ async def seed_documents(db: AsyncSession, source: Source) -> list[Document]:
             failure_reason="Ошибка подготовки"
             if statuses[index - 1] == DocumentStatus.FAILED
             else None,
-            last_indexed_at=now - timedelta(days=index),
+            last_indexed_at=None,
             last_synced_at=now - timedelta(hours=index * 3),
             version=1,
         )
@@ -216,6 +235,30 @@ async def seed_documents(db: AsyncSession, source: Source) -> list[Document]:
                     published_at=document.published_at + timedelta(hours=5),
                 ),
             ]
+        )
+        chunk_text = (
+            f"Как правильно решить задачу «{title.lower()}» в Python?\n\n"
+            f"Используйте стандартные средства Python.\n\n```python\n{code}\n```"
+        )
+        chunk_hash = hashlib.sha256(chunk_text.encode()).hexdigest()
+        db.add(
+            DocumentChunk(
+                chunk_key=stable_chunk_key(document.id, 1, 1, chunk_hash),
+                document_id=document.id,
+                document_version=1,
+                ordinal=1,
+                section_type="MIXED",
+                text=chunk_text,
+                contextual_text=(
+                    f"# {title}\nТеги: python, {tag_name}\nРаздел: Смешанный фрагмент\n\n"
+                    f"{chunk_text}"
+                ),
+                content_hash=chunk_hash,
+                token_count=len(chunk_text.split()),
+                character_count=len(chunk_text),
+                has_code=True,
+                language="python",
+            )
         )
         documents.append(document)
     source.documents_count = len(documents)

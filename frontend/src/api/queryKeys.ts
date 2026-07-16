@@ -70,6 +70,8 @@ export const queryKeys = {
     ingestionFailures: (filters: IngestionFailureFilters) =>
       ['admin', 'ingestion', 'failures', filters] as const,
     ingestionFailure: (failureId: string) => ['admin', 'ingestion', 'failure', failureId] as const,
+    indexes: ['admin', 'indexes'] as const,
+    indexStats: ['admin', 'indexes', 'stats'] as const,
     audit: (filters: AuditFilters) => ['admin', 'audit', filters] as const,
     auditEvent: (eventId: string) => ['admin', 'audit-event', eventId] as const,
     systemStatus: ['admin', 'system-status'] as const,

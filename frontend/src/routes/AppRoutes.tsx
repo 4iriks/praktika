@@ -74,6 +74,9 @@ const AuditPage = lazy(() =>
 const SystemPage = lazy(() =>
   import('../pages/admin/SystemPage').then((module) => ({ default: module.SystemPage })),
 );
+const IndexesPage = lazy(() =>
+  import('../pages/admin/IndexesPage').then((module) => ({ default: module.IndexesPage })),
+);
 
 export function AppRoutes() {
   return (
@@ -140,6 +143,7 @@ export function AppRoutes() {
           <Route path="/admin/jobs" element={<AdminJobsPage />} />
           <Route path="/admin/audit" element={<AuditPage />} />
           <Route path="/admin/system" element={<SystemPage />} />
+          <Route path="/admin/indexes" element={<IndexesPage />} />
         </Route>
         <Route path="*" element={<NotFoundPage />} />
       </Routes>

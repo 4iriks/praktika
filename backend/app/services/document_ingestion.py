@@ -38,6 +38,7 @@ from app.processing.selection import (
     ProcessedAnswer,
     select_corpus_answers,
 )
+from app.services.index_jobs import enqueue_document_reindex
 
 
 class IngestionSkip(ValueError):
@@ -239,6 +240,8 @@ async def ingest_question_thread(
     elif document.processing_status != ProcessingStatus.CHUNKED:
         document.processing_status = ProcessingStatus.CHUNKED
         document.processing_error = None
+    if content_changed and document.deduplication_status != DeduplicationStatus.EXACT_DUPLICATE:
+        await enqueue_document_reindex(db, document, settings=settings)
     await db.flush()
 
     if document.deduplication_status == DeduplicationStatus.EXACT_DUPLICATE:

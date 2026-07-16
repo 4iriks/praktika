@@ -151,14 +151,19 @@ describe('HTTP API security boundary', () => {
   it('использует operational ingestion endpoints только через API layer', async () => {
     const fetchMock = vi
       .spyOn(globalThis, 'fetch')
-      .mockImplementation(async () => jsonResponse({ items: [], pagination: {} }));
+      .mockImplementation(() => Promise.resolve(jsonResponse({ items: [], pagination: {} })));
 
     await httpApi.getAdminJobEvents('job/1');
     await httpApi.getManagedDocumentChunks('document/1');
     await httpApi.getManagedDocumentRevisions('document/1');
     await httpApi.getManagedDocumentFailures('document/1');
 
-    expect(fetchMock.mock.calls.map(([url]) => String(url))).toEqual([
+    const urls = fetchMock.mock.calls.map(([url]) => {
+      if (typeof url === 'string') return url;
+      if (url instanceof URL) return url.href;
+      return url.url;
+    });
+    expect(urls).toEqual([
       expect.stringContaining('/admin/jobs/job%2F1/events'),
       expect.stringContaining('/editor/documents/document%2F1/chunks'),
       expect.stringContaining('/editor/documents/document%2F1/revisions'),

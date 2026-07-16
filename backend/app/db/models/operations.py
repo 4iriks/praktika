@@ -14,6 +14,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
     and_,
     func,
 )
@@ -176,7 +177,7 @@ class Job(Base, UUIDPrimaryKeyMixin):
     __table_args__ = (
         CheckConstraint(
             "type IN ('SOURCE_SYNC','DOCUMENT_REPROCESS','DOCUMENT_REINDEX',"
-            "'FULL_REINDEX','HEALTH_CHECK')",
+            "'FULL_REINDEX','HEALTH_CHECK','SEARCH_INDEX_VALIDATE','SEARCH_INDEX_CLEANUP')",
             name="job_type_values",
         ),
         CheckConstraint(
@@ -385,6 +386,110 @@ class IngestionFailure(Base, UUIDPrimaryKeyMixin):
         ),
         Index("ix_ingestion_failures_source_created_at", "source_id", "created_at"),
         Index("ix_ingestion_failures_job_created_at", "job_id", "created_at"),
+    )
+
+
+class SearchIndexVersion(Base, UUIDPrimaryKeyMixin):
+    __tablename__ = "search_index_versions"
+
+    collection_name: Mapped[str] = mapped_column(String(255), unique=True)
+    alias_name: Mapped[str] = mapped_column(String(255), index=True)
+    status: Mapped[str] = mapped_column(String(16), index=True)
+    schema_version: Mapped[str] = mapped_column(String(40))
+    schema_hash: Mapped[str] = mapped_column(String(64), index=True)
+    embedding_provider: Mapped[str] = mapped_column(String(40))
+    embedding_model: Mapped[str] = mapped_column(String(200))
+    embedding_dimensions: Mapped[int] = mapped_column(Integer)
+    embedding_instruction_hash: Mapped[str] = mapped_column(String(64))
+    sparse_provider: Mapped[str] = mapped_column(String(40))
+    sparse_model: Mapped[str] = mapped_column(String(200))
+    qdrant_server_version: Mapped[str] = mapped_column(String(40))
+    qdrant_client_version: Mapped[str] = mapped_column(String(40))
+    point_count: Mapped[int] = mapped_column(Integer, default=0)
+    eligible_chunk_count: Mapped[int] = mapped_column(Integer, default=0)
+    build_job_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("jobs.id", ondelete="SET NULL"), index=True
+    )
+    created_by: Mapped[UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), index=True
+    )
+    build_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    build_finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    activated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    retired_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    failure_code: Mapped[str | None] = mapped_column(String(80))
+    failure_message: Mapped[str | None] = mapped_column(String(1000))
+    config: Mapped[dict[str, object]] = mapped_column(JSONB, default=dict)
+
+    build_job: Mapped[Job | None] = relationship(foreign_keys=[build_job_id], lazy="selectin")
+    creator: Mapped[User | None] = relationship(foreign_keys=[created_by], lazy="selectin")
+    entries: Mapped[list[SearchIndexEntry]] = relationship(
+        back_populates="index_version", cascade="all, delete-orphan"
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('BUILDING','READY','ACTIVE','FAILED','RETIRED')",
+            name="search_index_version_status_values",
+        ),
+        CheckConstraint(
+            "embedding_dimensions > 0", name="search_index_version_dimensions_positive"
+        ),
+        CheckConstraint(
+            "point_count >= 0 AND eligible_chunk_count >= 0",
+            name="search_index_version_counts_non_negative",
+        ),
+        Index(
+            "uq_search_index_versions_active",
+            "status",
+            unique=True,
+            postgresql_where=status == "ACTIVE",
+        ),
+    )
+
+
+class SearchIndexEntry(Base, UUIDPrimaryKeyMixin):
+    __tablename__ = "search_index_entries"
+
+    index_version_id: Mapped[UUID] = mapped_column(
+        ForeignKey("search_index_versions.id", ondelete="CASCADE"), index=True
+    )
+    chunk_id: Mapped[UUID] = mapped_column(
+        ForeignKey("document_chunks.id", ondelete="CASCADE"), index=True
+    )
+    document_id: Mapped[UUID] = mapped_column(
+        ForeignKey("documents.id", ondelete="CASCADE"), index=True
+    )
+    document_version: Mapped[int] = mapped_column(Integer)
+    point_id: Mapped[UUID] = mapped_column(index=True)
+    chunk_content_hash: Mapped[str] = mapped_column(String(64))
+    indexed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    status: Mapped[str] = mapped_column(String(16), index=True)
+    failure_code: Mapped[str | None] = mapped_column(String(80))
+    failure_message: Mapped[str | None] = mapped_column(String(1000))
+
+    index_version: Mapped[SearchIndexVersion] = relationship(back_populates="entries")
+
+    __table_args__ = (
+        UniqueConstraint(
+            "index_version_id", "chunk_id", name="uq_search_index_entries_index_chunk"
+        ),
+        UniqueConstraint(
+            "index_version_id", "point_id", name="uq_search_index_entries_index_point"
+        ),
+        CheckConstraint("document_version >= 1", name="search_index_entry_version_positive"),
+        CheckConstraint(
+            "status IN ('PENDING','INDEXED','FAILED','REMOVED')",
+            name="search_index_entry_status_values",
+        ),
+        Index(
+            "ix_search_index_entries_document_version",
+            "document_id",
+            "document_version",
+        ),
     )
 
 

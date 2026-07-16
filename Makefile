@@ -8,7 +8,8 @@ COMPOSE ?= $(shell if docker compose version >/dev/null 2>&1; then \
 
 .PHONY: backend-up backend-test backend-lint backend-migrate backend-seed backend-logs \
 	worker-up worker-logs worker-health sync-smoke sync-incremental ingestion-report \
-	sync-full-confirmed
+	sync-full-confirmed qdrant-up indexer-up index-logs index-status index-full \
+	models-pull embedding-model-pull
 
 backend-up:
 	$(COMPOSE) up -d postgres backend
@@ -49,6 +50,24 @@ sync-incremental:
 
 ingestion-report:
 	$(COMPOSE) run --rm worker python -m app.scripts.ingestion_report
+
+qdrant-up:
+	$(COMPOSE) up -d qdrant
+
+indexer-up:
+	$(COMPOSE) up -d postgres qdrant ollama indexer
+
+index-logs:
+	$(COMPOSE) logs -f indexer qdrant ollama
+
+index-status:
+	$(COMPOSE) run --rm backend python -m app.scripts.worker_health
+
+index-full:
+	@echo "Полная переиндексация запускается из /admin/indexes с явным подтверждением."
+
+models-pull embedding-model-pull:
+	$(COMPOSE) run --rm backend python -m app.scripts.pull_models --embedding-only
 
 sync-full-confirmed:
 	@test "$(CONFIRM_FULL_SYNC)" = "YES" || \

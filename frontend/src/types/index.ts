@@ -18,7 +18,9 @@ export type Permission =
   | 'ADMIN_JOBS_MANAGE'
   | 'AUDIT_VIEW'
   | 'SYSTEM_VIEW'
-  | 'SYSTEM_SETTINGS_MANAGE';
+  | 'SYSTEM_SETTINGS_MANAGE'
+  | 'SEARCH_INDEX_VIEW'
+  | 'SEARCH_INDEX_MANAGE';
 export type PermissionMap = Record<UserRole, readonly Permission[]>;
 export type SearchMode = 'bm25' | 'vector' | 'hybrid';
 export type SearchView = 'documents' | 'answer';
@@ -522,7 +524,9 @@ export type JobType =
   | 'DOCUMENT_REPROCESS'
   | 'DOCUMENT_REINDEX'
   | 'FULL_REINDEX'
-  | 'HEALTH_CHECK';
+  | 'HEALTH_CHECK'
+  | 'SEARCH_INDEX_VALIDATE'
+  | 'SEARCH_INDEX_CLEANUP';
 export type JobStatus = 'QUEUED' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
 export type JobErrorCode = 'VECTOR_BUILD_FAILED' | 'SOURCE_UNAVAILABLE' | 'INDEX_WRITE_FAILED';
 export type JobStage =
@@ -629,6 +633,61 @@ export interface JobFilters {
 export interface JobsResponse {
   items: BackgroundJob[];
   pagination: Pagination;
+}
+
+export type SearchIndexVersionStatus = 'BUILDING' | 'READY' | 'ACTIVE' | 'FAILED' | 'RETIRED';
+
+export interface SearchIndexVersion {
+  id: string;
+  collectionName: string;
+  aliasName: string;
+  status: SearchIndexVersionStatus;
+  schemaVersion: string;
+  schemaHash: string;
+  embeddingProvider: string;
+  embeddingModel: string;
+  embeddingDimensions: number;
+  sparseProvider: string;
+  sparseModel: string;
+  qdrantServerVersion: string;
+  qdrantClientVersion: string;
+  pointCount: number;
+  eligibleChunkCount: number;
+  buildJobId?: string;
+  createdAt: string;
+  buildStartedAt?: string;
+  buildFinishedAt?: string;
+  activatedAt?: string;
+  retiredAt?: string;
+  failureCode?: string;
+  failureMessage?: string;
+  config: JsonObject;
+}
+
+export interface SearchIndexVersionsResponse {
+  items: SearchIndexVersion[];
+  pagination: Pagination;
+}
+
+export interface SearchIndexStats {
+  aliasName: string;
+  aliasTarget?: string;
+  activeVersion?: SearchIndexVersion;
+  eligibleChunks: number;
+  indexedChunks: number;
+  staleChunks: number;
+  pointsCount: number;
+  currentFullReindexJob?: BackgroundJob;
+  qdrantOnline: boolean;
+  qdrantVersion?: string;
+  qdrantMessage: string;
+  embeddingProvider: string;
+  embeddingModel: string;
+  embeddingDimensions: number;
+  embeddingOnline: boolean;
+  embeddingModelInstalled: boolean;
+  indexerOnline: boolean;
+  indexerLastHeartbeatAt?: string;
 }
 
 export interface AdminUser extends User {
