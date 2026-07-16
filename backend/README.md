@@ -219,9 +219,13 @@ make worker-logs
 make COMPOSE=docker-compose worker-up
 ```
 
-## Ограничения
+## Этап 5 и ограничения
 
-Подэтап 5.2 не является завершением Этапа 5 и не запускает полный импорт 25 000 документов.
+SOURCE_SYNC сохраняет questions, answers, tags, revisions и chunks; worker поддерживает durable
+claim, lease, heartbeat, checkpoint, cancellation и retry. Operational API и CLI описаны в
+`docs/stage5-ingestion.md` и `docs/ingestion-runbook.md`. Полный импорт 25 000 документов требует
+явного `CONFIRM_FULL_SYNC=YES` и автоматически не запускается.
+
 Qdrant, BM25, embeddings, HNSW, reranker, Ollama и RAG не настроены. `/api/search` и `/api/ask`
 не подменяют будущий движок SQL-поиском и продолжают возвращать 501. Frontend mock mode остаётся
 демонстрационным режимом по умолчанию.

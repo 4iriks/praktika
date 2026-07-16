@@ -437,6 +437,23 @@ describe('Stage 3 mock repository', () => {
     ).toBe(true);
   });
 
+  it('operational ingestion contract доступен ADMIN и read-only document API доступен EDITOR', async () => {
+    await login('ADMIN');
+    const state = await mockApi.getSourceSyncState('source-stackoverflow-ru');
+    const stats = await mockApi.getIngestionStats();
+    expect(state.totalQuestionsFetched).toBeGreaterThan(0);
+    expect(stats.chunksCount).toBeGreaterThan(0);
+    await mockApi.logout();
+    await login('EDITOR');
+    const document = (await mockApi.getManagedDocuments(managedFilters)).items[0];
+    expect(document).toBeDefined();
+    if (!document) return;
+    expect(
+      (await mockApi.getManagedDocumentChunks(document.documentId)).items.length,
+    ).toBeGreaterThan(0);
+    expect((await mockApi.getManagedDocumentRevisions(document.documentId)).items).toHaveLength(1);
+  });
+
   it('source settings валидируются', async () => {
     await login('ADMIN');
     await expect(
@@ -509,6 +526,14 @@ describe('Stage 3 mock repository', () => {
     expect(Date.parse(checked.lastCheckAt)).toBeGreaterThan(Date.parse(before.lastCheckAt));
     const audit = await mockApi.getAuditEvents(auditFilters);
     expect(audit.items.some((event) => event.action === 'HEALTH_CHECK')).toBe(true);
+  });
+
+  it('будущие сервисы не показываются ONLINE на Этапе 5', async () => {
+    await login('ADMIN');
+    const status = await mockApi.getSystemStatus();
+    for (const id of ['qdrant', 'ollama', 'indexer', 'bm25', 'vector', 'embedding', 'reranker']) {
+      expect(status.services.find((service) => service.id === id)?.status).toBe('OFFLINE');
+    }
   });
 
   it('system settings доступны только ADMIN и отклоняют невалидные значения', async () => {

@@ -32,6 +32,21 @@ export function ManagedDocumentPage() {
     queryFn: ({ signal }) => api.getManagedDocument(documentId, signal),
     enabled: Boolean(documentId),
   });
+  const chunks = useQuery({
+    queryKey: queryKeys.editor.documentChunks(documentId),
+    queryFn: ({ signal }) => api.getManagedDocumentChunks(documentId, signal),
+    enabled: Boolean(documentId),
+  });
+  const revisions = useQuery({
+    queryKey: queryKeys.editor.documentRevisions(documentId),
+    queryFn: ({ signal }) => api.getManagedDocumentRevisions(documentId, signal),
+    enabled: Boolean(documentId),
+  });
+  const failures = useQuery({
+    queryKey: queryKeys.editor.documentFailures(documentId),
+    queryFn: ({ signal }) => api.getManagedDocumentFailures(documentId, signal),
+    enabled: Boolean(documentId),
+  });
   useEffect(() => {
     if (!query.data) return;
     setForm({
@@ -187,6 +202,91 @@ export function ManagedDocumentPage() {
               </article>
             ))}
           </section>
+          <section className="panel p-5" aria-labelledby="selected-answers-title">
+            <h2 id="selected-answers-title" className="text-sm font-semibold">
+              Ответы, выбранные для корпуса ({document.selectedAnswers.length})
+            </h2>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              {document.selectedAnswers.map((answer) => (
+                <div key={answer.id} className="rounded-lg border border-line p-3 text-xs">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-mono text-info">#{answer.selectionRank ?? '—'}</span>
+                    <span className="text-ink">{answer.authorName}</span>
+                    {answer.isAccepted ? <StatusBadge status="ACCEPTED" /> : null}
+                  </div>
+                  <p className="mt-2 text-muted">
+                    Stack Exchange ID: {answer.externalId} · score {answer.score}
+                  </p>
+                </div>
+              ))}
+              {document.selectedAnswers.length === 0 ? (
+                <p className="text-xs text-muted">Ответы для canonical document не выбраны.</p>
+              ) : null}
+            </div>
+          </section>
+          <section className="panel p-5" aria-labelledby="chunks-title">
+            <div className="flex items-center justify-between gap-3">
+              <h2 id="chunks-title" className="text-sm font-semibold">
+                Чанки · только чтение
+              </h2>
+              <span className="font-mono text-xs text-muted">
+                {chunks.data?.pagination.total ?? document.chunksCount}
+              </span>
+            </div>
+            {chunks.isPending ? <p className="mt-3 text-xs text-muted">Загружаем чанки…</p> : null}
+            {chunks.isError ? (
+              <p className="mt-3 text-xs text-danger">{chunks.error.message}</p>
+            ) : null}
+            <div className="mt-3 space-y-3">
+              {chunks.data?.items.map((chunk) => (
+                <article key={chunk.id} className="rounded-lg border border-line p-3">
+                  <div className="flex flex-wrap items-center gap-2 text-[10px]">
+                    <StatusBadge status={chunk.sectionType} />
+                    <span className="font-mono text-info">#{chunk.ordinal}</span>
+                    <span className="text-muted">{chunk.tokenCount} токенов</span>
+                    <span className="text-muted">v{chunk.documentVersion}</span>
+                    {chunk.hasCode ? <span className="font-mono text-info">CODE</span> : null}
+                  </div>
+                  <pre className="mt-3 max-h-48 overflow-auto whitespace-pre-wrap font-sans text-xs leading-6 text-muted">
+                    {chunk.text}
+                  </pre>
+                </article>
+              ))}
+              {chunks.data?.items.length === 0 ? (
+                <p className="text-xs text-muted">У документа пока нет чанков.</p>
+              ) : null}
+            </div>
+          </section>
+          <section className="panel p-5" aria-labelledby="revisions-title">
+            <h2 id="revisions-title" className="text-sm font-semibold">
+              Ревизии · только чтение
+            </h2>
+            {revisions.isPending ? (
+              <p className="mt-3 text-xs text-muted">Загружаем ревизии…</p>
+            ) : null}
+            {revisions.isError ? (
+              <p className="mt-3 text-xs text-danger">{revisions.error.message}</p>
+            ) : null}
+            <div className="mt-3 space-y-3">
+              {revisions.data?.items.map((revision) => (
+                <article key={revision.id} className="rounded-lg border border-line p-3 text-xs">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <StatusBadge status={`VERSION ${revision.version}`} />
+                    <span className="font-mono text-info">{revision.changeReason}</span>
+                    <time className="ml-auto text-muted">
+                      {new Date(revision.createdAt).toLocaleString('ru-RU')}
+                    </time>
+                  </div>
+                  <p className="mt-2 break-all font-mono text-[10px] text-muted">
+                    content {revision.contentHash} · metadata {revision.metadataHash}
+                  </p>
+                </article>
+              ))}
+              {revisions.data?.items.length === 0 ? (
+                <p className="text-xs text-muted">Ревизий пока нет.</p>
+              ) : null}
+            </div>
+          </section>
         </div>
         <aside className="space-y-5">
           <section className="panel p-4">
@@ -195,10 +295,29 @@ export function ManagedDocumentPage() {
               <Meta label="Документ" value={document.status} badge />
               <Meta label="BM25" value={document.bm25Status} badge />
               <Meta label="Vector" value={document.vectorStatus} badge />
+              <Meta label="Processing" value={document.processingStatus} badge />
+              <Meta label="Дедупликация" value={document.deduplicationStatus} badge />
               <Meta label="Чанки" value={String(document.chunksCount)} />
+              <Meta label="Выбрано ответов" value={String(document.selectedAnswersCount)} />
               <Meta label="Версия" value={String(document.version)} />
               <Meta label="Content hash" value={document.contentHash} />
+              <Meta label="Metadata hash" value={document.metadataHash ?? '—'} />
+              <Meta label="Последний source update" value={formatDate(document.sourceUpdatedAt)} />
+              <Meta label="Последний seen" value={formatDate(document.lastSeenAt)} />
             </dl>
+            {document.duplicateOfDocumentId ? (
+              <Link
+                className="mt-4 inline-block text-xs text-info hover:underline"
+                to={`/editor/documents/${document.duplicateOfDocumentId}`}
+              >
+                Открыть оригинал exact duplicate
+              </Link>
+            ) : null}
+            {document.processingError ? (
+              <p className="mt-4 rounded-lg border border-danger/30 bg-danger/5 p-3 text-xs text-danger">
+                {document.processingError}
+              </p>
+            ) : null}
             <div className="mt-4 flex flex-wrap gap-2">
               {['ACTIVE', 'OUTDATED'].includes(document.status) ? (
                 <Button size="sm" variant="danger" onClick={() => setAction('HIDE')}>
@@ -216,6 +335,29 @@ export function ManagedDocumentPage() {
                 <Workflow className="size-4" />
                 Переиндексировать
               </Button>
+            </div>
+          </section>
+          <section className="panel p-4">
+            <h2 className="text-sm font-semibold">Ошибки ingestion</h2>
+            {failures.isPending ? (
+              <p className="mt-3 text-xs text-muted">Проверяем ошибки…</p>
+            ) : null}
+            {failures.isError ? (
+              <p className="mt-3 text-xs text-danger">{failures.error.message}</p>
+            ) : null}
+            <div className="mt-3 space-y-3">
+              {failures.data?.items.map((failure) => (
+                <div key={failure.id} className="rounded-lg border border-line p-3">
+                  <div className="flex items-center gap-2">
+                    <StatusBadge status={failure.retryable ? 'RETRYABLE' : 'TERMINAL'} />
+                    <span className="font-mono text-[10px] text-danger">{failure.errorCode}</span>
+                  </div>
+                  <p className="mt-2 text-xs text-muted">{failure.safeMessage}</p>
+                </div>
+              ))}
+              {failures.data?.items.length === 0 ? (
+                <p className="text-xs text-muted">Ошибок ingestion нет.</p>
+              ) : null}
             </div>
           </section>
           <section className="panel p-4">
@@ -287,4 +429,8 @@ function Meta({ label, value, badge = false }: { label: string; value: string; b
       </dd>
     </div>
   );
+}
+
+function formatDate(value?: string): string {
+  return value ? new Date(value).toLocaleString('ru-RU') : '—';
 }

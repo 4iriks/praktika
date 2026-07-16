@@ -74,7 +74,7 @@ export function SystemPage() {
       <PageHeading
         eyebrow="SYSTEM & TELEMETRY"
         title="Система"
-        description="Демонстрационный режим. Реальные метрики будут получаться через FastAPI."
+        description="Фактическое состояние FastAPI, PostgreSQL, crawler worker и корпуса. Будущие поисковые сервисы явно отмечены как не настроенные."
         actions={
           <Button loading={health.isPending} onClick={() => health.mutate()}>
             <Activity className="size-4" />
@@ -124,6 +124,26 @@ export function SystemPage() {
         <MetricCard label="Vector index" value={`${data.metrics.vectorIndexSizeGb} ГБ`} />
         <MetricCard label="Модель" value={`${data.metrics.modelSizeGb} ГБ`} />
         <MetricCard label="Docker images" value={`~${data.metrics.dockerImagesEstimateGb} ГБ`} />
+        <MetricCard label="Документы" value={data.metrics.documentsCount.toLocaleString('ru-RU')} />
+        <MetricCard label="Ответы" value={data.metrics.answersCount.toLocaleString('ru-RU')} />
+        <MetricCard label="Чанки" value={data.metrics.chunksCount.toLocaleString('ru-RU')} />
+        <MetricCard label="Ревизии" value={data.metrics.revisionsCount.toLocaleString('ru-RU')} />
+        <MetricCard
+          label="Ошибки ingestion"
+          value={data.metrics.failuresCount.toLocaleString('ru-RU')}
+        />
+        <MetricCard
+          label="Активные задания"
+          value={data.metrics.activeJobs.toLocaleString('ru-RU')}
+        />
+        <MetricCard
+          label="Последняя ingestion-активность"
+          value={
+            data.metrics.lastIngestionAt
+              ? new Date(data.metrics.lastIngestionAt).toLocaleString('ru-RU')
+              : '—'
+          }
+        />
       </section>
       <div className="mt-6 grid gap-5 xl:grid-cols-[0.75fr_1.25fr]">
         <section className="panel p-5">
@@ -137,8 +157,8 @@ export function SystemPage() {
             <Hardware label="Лимит проекта" value={`${data.hardware.projectDiskLimitGb} ГБ`} />
             <Hardware label="Приложение" value={data.metrics.applicationVersion} />
             <Hardware
-              label="Документы / чанки"
-              value={`${data.metrics.documentsCount.toLocaleString('ru-RU')} / ${data.metrics.chunksCount.toLocaleString('ru-RU')}`}
+              label="Документы / ответы / чанки"
+              value={`${data.metrics.documentsCount.toLocaleString('ru-RU')} / ${data.metrics.answersCount.toLocaleString('ru-RU')} / ${data.metrics.chunksCount.toLocaleString('ru-RU')}`}
             />
           </dl>
         </section>
@@ -146,7 +166,8 @@ export function SystemPage() {
           <section className="panel p-5">
             <h2 className="text-sm font-semibold">Системные настройки</h2>
             <p className="mt-1 text-xs text-muted">
-              Публичные ограничения применяются mock API до выполнения поиска или RAG.
+              Публичные ограничения сохраняются в PostgreSQL. Search/RAG HTTP endpoints до Этапа 6
+              честно возвращают 501.
             </p>
             <div className="mt-5 grid gap-4 sm:grid-cols-2">
               <NumberField
@@ -236,7 +257,7 @@ function UsageCard({
   limit: number;
   unit: string;
 }) {
-  const percent = Math.round((value / limit) * 100);
+  const percent = limit > 0 ? Math.round((value / limit) * 100) : 0;
   return (
     <div className="panel p-4">
       <p className="technical-label">{label}</p>

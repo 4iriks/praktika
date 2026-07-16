@@ -15,11 +15,18 @@ import type {
   BulkDocumentResult,
   ChangeRoleRequest,
   Document,
+  DocumentChunksResponse,
+  DocumentRevisionsResponse,
   EditorDashboard,
   Feedback,
   FeedbackRequest,
   HistoryFilters,
   HistoryResponse,
+  IngestionFailure,
+  IngestionFailureFilters,
+  IngestionFailuresResponse,
+  IngestionStats,
+  JobEventsResponse,
   JobFilters,
   JobsResponse,
   LoginRequest,
@@ -38,6 +45,8 @@ import type {
   Source,
   SourceConnectionResult,
   SourceFilters,
+  SourceSyncRequest,
+  SourceSyncState,
   SourcesResponse,
   SourceUpdateRequest,
   SystemSettings,
@@ -290,6 +299,22 @@ function auditQuery(filters: AuditFilters): string {
   }).toString();
 }
 
+function ingestionFailuresQuery(filters: IngestionFailureFilters): string {
+  const params = new URLSearchParams({
+    retryable: filters.retryable ?? 'all',
+    resolved: filters.resolved ?? 'all',
+    sort: filters.sort ?? 'created_desc',
+    page: String(filters.page),
+    limit: String(filters.limit),
+  });
+  if (filters.sourceId) params.set('source_id', filters.sourceId);
+  if (filters.jobId) params.set('job_id', filters.jobId);
+  if (filters.documentId) params.set('document_id', filters.documentId);
+  if (filters.externalId) params.set('external_id', filters.externalId);
+  if (filters.errorCode) params.set('error_code', filters.errorCode);
+  return params.toString();
+}
+
 export const httpApi: ApiClient = {
   searchDocuments(value, signal) {
     return request<SearchResponse>('/search?' + searchQuery(value), { signal });
@@ -374,6 +399,24 @@ export const httpApi: ApiClient = {
       signal,
     });
   },
+  getManagedDocumentChunks(documentId, signal) {
+    return request<DocumentChunksResponse>(
+      '/editor/documents/' + encodeURIComponent(documentId) + '/chunks',
+      { signal },
+    );
+  },
+  getManagedDocumentRevisions(documentId, signal) {
+    return request<DocumentRevisionsResponse>(
+      '/editor/documents/' + encodeURIComponent(documentId) + '/revisions',
+      { signal },
+    );
+  },
+  getManagedDocumentFailures(documentId, signal) {
+    return request<IngestionFailuresResponse>(
+      '/editor/documents/' + encodeURIComponent(documentId) + '/failures',
+      { signal },
+    );
+  },
   updateDocumentMetadata(documentId, value: ManagedDocumentUpdate) {
     return request<ManagedDocumentDetail>(
       '/editor/documents/' + encodeURIComponent(documentId) + '/metadata',
@@ -406,6 +449,11 @@ export const httpApi: ApiClient = {
   },
   getEditorJobs(filters, signal) {
     return request<JobsResponse>('/editor/jobs?' + jobsQuery(filters), { signal });
+  },
+  getEditorJobEvents(jobId, signal) {
+    return request<JobEventsResponse>('/editor/jobs/' + encodeURIComponent(jobId) + '/events', {
+      signal,
+    });
   },
   getAdminDashboard(signal) {
     return request<AdminDashboard>('/admin/dashboard', { signal });
@@ -451,9 +499,16 @@ export const httpApi: ApiClient = {
       { method: 'POST' },
     );
   },
-  startSourceSync(sourceId) {
+  getSourceSyncState(sourceId, signal) {
+    return request<SourceSyncState>(
+      '/admin/sources/' + encodeURIComponent(sourceId) + '/sync-state',
+      { signal },
+    );
+  },
+  startSourceSync(sourceId, value?: SourceSyncRequest) {
     return request<BackgroundJob>('/admin/sources/' + encodeURIComponent(sourceId) + '/sync', {
       method: 'POST',
+      ...(value ? { body: JSON.stringify(value) } : {}),
     });
   },
   stopSourceSync(sourceId) {
@@ -461,11 +516,30 @@ export const httpApi: ApiClient = {
       method: 'POST',
     });
   },
+  getIngestionStats(signal) {
+    return request<IngestionStats>('/admin/ingestion/stats', { signal });
+  },
+  getIngestionFailures(filters, signal) {
+    return request<IngestionFailuresResponse>(
+      '/admin/ingestion/failures?' + ingestionFailuresQuery(filters),
+      { signal },
+    );
+  },
+  getIngestionFailure(failureId, signal) {
+    return request<IngestionFailure>('/admin/ingestion/failures/' + encodeURIComponent(failureId), {
+      signal,
+    });
+  },
   getAdminJobs(filters, signal) {
     return request<JobsResponse>('/admin/jobs?' + jobsQuery(filters), { signal });
   },
   getAdminJob(jobId, signal) {
     return request<BackgroundJob>('/admin/jobs/' + encodeURIComponent(jobId), { signal });
+  },
+  getAdminJobEvents(jobId, signal) {
+    return request<JobEventsResponse>('/admin/jobs/' + encodeURIComponent(jobId) + '/events', {
+      signal,
+    });
   },
   retryJob(jobId) {
     return request<BackgroundJob>('/admin/jobs/' + encodeURIComponent(jobId) + '/retry', {

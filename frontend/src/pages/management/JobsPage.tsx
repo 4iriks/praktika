@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Pause, Play, RefreshCw, RotateCcw, Square } from 'lucide-react';
+import { ChevronDown, ChevronUp, Pause, Play, RefreshCw, RotateCcw, Square } from 'lucide-react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { api } from '../../api';
@@ -71,8 +71,8 @@ function JobsPage({ admin }: { admin: boolean }) {
         title={admin ? 'Все фоновые задания' : 'Задания редактора'}
         description={
           admin
-            ? 'Полный lifecycle jobs: запуск, детерминированный прогресс, отмена и безопасный retry.'
-            : 'Наблюдение за индексированием документов. Административные операции доступны только ADMIN.'
+            ? 'Durable PostgreSQL-очередь: checkpoint, lease, heartbeat, события, отмена и безопасный retry.'
+            : 'Read-only наблюдение за заданиями и событиями worker. Управление доступно только ADMIN.'
         }
         actions={
           <>
@@ -108,7 +108,14 @@ function JobsPage({ admin }: { admin: boolean }) {
         <Select
           label="Тип"
           value={filters.type}
-          options={['ALL', 'SOURCE_SYNC', 'DOCUMENT_REINDEX', 'FULL_REINDEX', 'HEALTH_CHECK']}
+          options={[
+            'ALL',
+            'SOURCE_SYNC',
+            'DOCUMENT_REPROCESS',
+            'DOCUMENT_REINDEX',
+            'FULL_REINDEX',
+            'HEALTH_CHECK',
+          ]}
           onChange={(value) => setParams(setParam(params, 'type', value))}
         />
         <Select
@@ -123,6 +130,10 @@ function JobsPage({ admin }: { admin: boolean }) {
           options={[
             'ALL',
             'PREPARING',
+            'FETCHING_QUESTIONS',
+            'FETCHING_ANSWERS',
+            'WAITING_BACKOFF',
+            'PROCESSING',
             'CRAWLING',
             'CLEANING',
             'DEDUPLICATING',
@@ -208,6 +219,14 @@ function JobCard({
   busy: boolean;
   onAction: (type: 'cancel' | 'retry') => void;
 }) {
+  const [expanded, setExpanded] = useState(false);
+  const events = useQuery({
+    queryKey: admin ? queryKeys.admin.jobEvents(job.id) : queryKeys.editor.jobEvents(job.id),
+    queryFn: ({ signal }) =>
+      admin ? api.getAdminJobEvents(job.id, signal) : api.getEditorJobEvents(job.id, signal),
+    enabled: expanded,
+    refetchInterval: expanded && ['QUEUED', 'RUNNING'].includes(job.status) ? 2_000 : false,
+  });
   return (
     <article className="panel p-4">
       <div className="flex flex-wrap items-center gap-2">
@@ -236,30 +255,120 @@ function JobCard({
           </Link>
         ) : null}
         {job.retryOfJobId ? <span>Повтор: {job.retryOfJobId}</span> : null}
+        <span>
+          Попытка {job.attempt ?? 0} / {job.maxAttempts ?? 5}
+        </span>
+        <span>Запросов: {(job.requestCount ?? 0).toLocaleString('ru-RU')}</span>
+        <span>Получено: {formatBytes(job.bytesReceived ?? 0)}</span>
       </div>
       {job.errorMessage ? (
         <div className="mt-3 rounded-lg border border-danger/30 bg-danger/5 p-3 text-xs text-danger">
           <b>{job.errorCode}</b> · {job.errorMessage}
         </div>
       ) : null}
-      {admin ? (
-        <div className="mt-3 flex gap-2">
-          {job.cancellable && ['QUEUED', 'RUNNING'].includes(job.status) ? (
-            <Button size="sm" variant="danger" disabled={busy} onClick={() => onAction('cancel')}>
-              <Square className="size-3.5" />
-              Отменить
-            </Button>
-          ) : null}
-          {['FAILED', 'CANCELLED'].includes(job.status) ? (
-            <Button size="sm" disabled={busy} onClick={() => onAction('retry')}>
-              <RotateCcw className="size-3.5" />
-              Повторить
-            </Button>
-          ) : null}
+      <div className="mt-3 flex flex-wrap gap-2">
+        <Button
+          size="sm"
+          variant="ghost"
+          aria-expanded={expanded}
+          onClick={() => setExpanded((value) => !value)}
+        >
+          {expanded ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
+          {expanded ? 'Скрыть детали' : 'Детали и события'}
+        </Button>
+        {admin ? (
+          <>
+            {job.cancellable && ['QUEUED', 'RUNNING'].includes(job.status) ? (
+              <Button size="sm" variant="danger" disabled={busy} onClick={() => onAction('cancel')}>
+                <Square className="size-3.5" />
+                Отменить
+              </Button>
+            ) : null}
+            {['FAILED', 'CANCELLED'].includes(job.status) ? (
+              <Button size="sm" disabled={busy} onClick={() => onAction('retry')}>
+                <RotateCcw className="size-3.5" />
+                Повторить
+              </Button>
+            ) : null}
+          </>
+        ) : null}
+      </div>
+      {expanded ? (
+        <div className="mt-4 grid gap-4 border-t border-line pt-4 xl:grid-cols-[0.9fr_1.1fr]">
+          <section aria-label="Технические детали задания">
+            <dl className="grid grid-cols-2 gap-3 text-xs">
+              <JobMeta label="Claimed by" value={job.claimedBy ?? '—'} />
+              <JobMeta label="Claimed at" value={formatDate(job.claimedAt)} />
+              <JobMeta label="Lease до" value={formatDate(job.leaseExpiresAt)} />
+              <JobMeta label="Heartbeat" value={formatDate(job.heartbeatAt)} />
+              <JobMeta label="Следующая попытка" value={formatDate(job.nextAttemptAt)} />
+              <JobMeta label="Запрошена отмена" value={formatDate(job.cancellationRequestedAt)} />
+            </dl>
+            <JsonBlock label="Checkpoint" value={job.checkpoint} />
+            <JsonBlock label="Результат" value={job.result} />
+          </section>
+          <section aria-label="События задания">
+            <h3 className="text-sm font-semibold">Timeline событий</h3>
+            {events.isPending ? (
+              <p className="mt-3 text-xs text-muted">Загружаем события…</p>
+            ) : null}
+            {events.isError ? (
+              <p className="mt-3 text-xs text-danger">{events.error.message}</p>
+            ) : null}
+            <ol className="mt-3 space-y-3">
+              {events.data?.items.map((event) => (
+                <li key={event.id} className="border-l border-line pl-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <StatusBadge status={event.level} />
+                    <span className="font-mono text-[10px] text-info">{event.code}</span>
+                    <span className="font-mono text-[10px] text-muted">{event.stage}</span>
+                  </div>
+                  <p className="mt-1 text-xs text-ink">{event.message}</p>
+                  <time className="mt-1 block font-mono text-[10px] text-muted">
+                    {new Date(event.createdAt).toLocaleString('ru-RU')}
+                  </time>
+                </li>
+              ))}
+            </ol>
+            {events.data?.items.length === 0 ? (
+              <p className="mt-3 text-xs text-muted">Событий пока нет.</p>
+            ) : null}
+          </section>
         </div>
       ) : null}
     </article>
   );
+}
+
+function JobMeta({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <dt className="text-muted">{label}</dt>
+      <dd className="mt-1 break-all font-mono text-ink">{value}</dd>
+    </div>
+  );
+}
+
+function JsonBlock({ label, value }: { label: string; value?: object }) {
+  if (!value || Object.keys(value).length === 0) return null;
+  return (
+    <div className="mt-4">
+      <p className="text-xs text-muted">{label}</p>
+      <pre className="mt-2 max-h-44 overflow-auto rounded-lg border border-line bg-canvas p-3 font-mono text-[10px] text-info">
+        {JSON.stringify(value, null, 2)}
+      </pre>
+    </div>
+  );
+}
+
+function formatDate(value?: string): string {
+  return value ? new Date(value).toLocaleString('ru-RU') : '—';
+}
+
+function formatBytes(value: number): string {
+  if (value < 1024) return `${value} Б`;
+  if (value < 1024 ** 2) return `${(value / 1024).toFixed(1)} КБ`;
+  return `${(value / 1024 ** 2).toFixed(1)} МБ`;
 }
 
 function Select({

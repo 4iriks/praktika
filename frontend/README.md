@@ -274,6 +274,14 @@ Argon2id, audit в PostgreSQL, HttpOnly session cookie и credentialed CORS. Д�
 
 Браузер никогда не вызывает Ollama напрямую.
 
+## Ingestion UI Этапа 5
+
+При `VITE_USE_MOCKS=false` страницы sources/jobs/system/editor documents используют FastAPI для
+sync state, ingestion statistics/failures, job events, chunks и revisions. Start dialog передаёт
+mode и безопасные limits, stop запрашивает cooperative cancellation, а auto-refresh TanStack
+Query работает только для `QUEUED`/`RUNNING`. Qdrant, Ollama и поисковые индексы не показываются
+ONLINE. Mock adapter сохраняет тот же interface для демонстрации без backend.
+
 ## Environment
 
 | Переменная              | Default                     | Назначение                      |

@@ -5,7 +5,7 @@ from uuid import UUID
 
 from pydantic import Field
 
-from app.core.enums import JobEventLevel, JobStage, SourceSyncMode
+from app.core.enums import ChunkSectionType, JobEventLevel, JobStage, SourceSyncMode
 from app.schemas.base import ApiModel, Pagination
 
 
@@ -95,4 +95,45 @@ class IngestionFailureOut(ApiModel):
 
 class IngestionFailuresResponse(ApiModel):
     items: list[IngestionFailureOut]
+    pagination: Pagination
+
+
+class DocumentChunkOut(ApiModel):
+    id: UUID
+    chunk_key: str
+    document_id: UUID
+    document_version: int
+    ordinal: int
+    section_type: ChunkSectionType
+    answer_id: UUID | None = None
+    text: str
+    contextual_text: str
+    content_hash: str
+    token_count: int
+    character_count: int
+    has_code: bool
+    language: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class DocumentChunksResponse(ApiModel):
+    items: list[DocumentChunkOut]
+    pagination: Pagination
+
+
+class DocumentRevisionOut(ApiModel):
+    id: UUID
+    document_id: UUID
+    version: int
+    content_hash: str
+    metadata_hash: str
+    source_updated_at: datetime | None = None
+    snapshot: dict[str, object]
+    change_reason: str
+    created_at: datetime
+
+
+class DocumentRevisionsResponse(ApiModel):
+    items: list[DocumentRevisionOut]
     pagination: Pagination

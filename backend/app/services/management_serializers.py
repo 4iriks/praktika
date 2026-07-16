@@ -142,5 +142,13 @@ async def managed_document_to_schema(db: AsyncSession, document: Document) -> Ma
         last_edited_at=document.last_edited_at,
         version=document.version,
         source_id=document.source_id,
+        processing_status=document.processing_status,
+        deduplication_status=document.deduplication_status,
+        duplicate_of_document_id=document.duplicate_of_document_id,
+        metadata_hash=document.metadata_hash,
+        processing_error=document.processing_error,
+        selected_answers_count=document.selected_answers_count,
+        source_updated_at=document.source_updated_at,
+        last_seen_at=document.last_seen_at,
         original=original,
     )

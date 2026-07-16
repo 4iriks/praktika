@@ -354,6 +354,8 @@ export interface JsonObject {
 }
 
 export type DocumentStatus = 'ACTIVE' | 'HIDDEN' | 'PENDING' | 'FAILED' | 'OUTDATED';
+export type ProcessingStatus = 'RAW' | 'CLEANING' | 'CLEANED' | 'CHUNKING' | 'CHUNKED' | 'FAILED';
+export type DeduplicationStatus = 'UNIQUE' | 'EXACT_DUPLICATE' | 'POSSIBLE_DUPLICATE';
 
 export interface ManagedDocument {
   documentId: string;
@@ -373,6 +375,14 @@ export interface ManagedDocument {
   lastEditedAt?: string;
   version: number;
   sourceId: string;
+  processingStatus: ProcessingStatus;
+  deduplicationStatus: DeduplicationStatus;
+  duplicateOfDocumentId?: string;
+  metadataHash?: string;
+  processingError?: string;
+  selectedAnswersCount: number;
+  sourceUpdatedAt?: string;
+  lastSeenAt?: string;
   original: Document;
 }
 
@@ -413,6 +423,60 @@ export interface ManagedDocumentsResponse {
 export interface ManagedDocumentDetail extends ManagedDocument {
   auditEvents: AuditEvent[];
   relatedJobs: BackgroundJob[];
+  selectedAnswers: SelectedAnswerSummary[];
+}
+
+export interface SelectedAnswerSummary {
+  id: string;
+  externalId: string;
+  authorName: string;
+  score: number;
+  isAccepted: boolean;
+  selectionRank?: number;
+  sourceMissing: boolean;
+}
+
+export type ChunkSectionType = 'QUESTION' | 'ACCEPTED_ANSWER' | 'ANSWER' | 'MIXED';
+
+export interface DocumentChunkSummary {
+  id: string;
+  chunkKey: string;
+  documentId: string;
+  documentVersion: number;
+  ordinal: number;
+  sectionType: ChunkSectionType;
+  answerId?: string;
+  text: string;
+  contextualText: string;
+  contentHash: string;
+  tokenCount: number;
+  characterCount: number;
+  hasCode: boolean;
+  language?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DocumentChunksResponse {
+  items: DocumentChunkSummary[];
+  pagination: Pagination;
+}
+
+export interface DocumentRevision {
+  id: string;
+  documentId: string;
+  version: number;
+  contentHash: string;
+  metadataHash: string;
+  sourceUpdatedAt?: string;
+  snapshot: JsonObject;
+  changeReason: string;
+  createdAt: string;
+}
+
+export interface DocumentRevisionsResponse {
+  items: DocumentRevision[];
+  pagination: Pagination;
 }
 
 export type BulkDocumentAction = 'HIDE' | 'RESTORE' | 'REINDEX';
@@ -453,11 +517,20 @@ export interface EditorDashboard {
   recentFailedJobs: BackgroundJob[];
 }
 
-export type JobType = 'SOURCE_SYNC' | 'DOCUMENT_REINDEX' | 'FULL_REINDEX' | 'HEALTH_CHECK';
+export type JobType =
+  | 'SOURCE_SYNC'
+  | 'DOCUMENT_REPROCESS'
+  | 'DOCUMENT_REINDEX'
+  | 'FULL_REINDEX'
+  | 'HEALTH_CHECK';
 export type JobStatus = 'QUEUED' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
 export type JobErrorCode = 'VECTOR_BUILD_FAILED' | 'SOURCE_UNAVAILABLE' | 'INDEX_WRITE_FAILED';
 export type JobStage =
   | 'PREPARING'
+  | 'FETCHING_QUESTIONS'
+  | 'FETCHING_ANSWERS'
+  | 'WAITING_BACKOFF'
+  | 'PROCESSING'
   | 'CRAWLING'
   | 'CLEANING'
   | 'DEDUPLICATING'
@@ -487,7 +560,54 @@ export interface BackgroundJob {
   errorMessage?: string;
   retryOfJobId?: string;
   cancellable: boolean;
+  claimedBy?: string;
+  claimedAt?: string;
+  leaseExpiresAt?: string;
+  heartbeatAt?: string;
+  attempt?: number;
+  maxAttempts?: number;
+  nextAttemptAt?: string;
+  cancellationRequestedAt?: string;
+  checkpoint?: JsonObject;
+  result?: JsonObject;
+  requestCount?: number;
+  bytesReceived?: number;
+  updatedAt?: string;
 }
+
+export type JobEventLevel = 'DEBUG' | 'INFO' | 'WARNING' | 'ERROR';
+
+export interface JobEvent {
+  id: string;
+  jobId: string;
+  level: JobEventLevel;
+  stage: JobStage;
+  code: string;
+  message: string;
+  metrics: JsonObject;
+  createdAt: string;
+}
+
+export interface JobEventsResponse {
+  items: JobEvent[];
+  pagination: Pagination;
+}
+
+export type IngestionJobResult = Partial<{
+  questionsFetched: number;
+  answersFetched: number;
+  inserted: number;
+  updated: number;
+  unchanged: number;
+  duplicates: number;
+  skipped: number;
+  failed: number;
+  chunksCreated: number;
+  requests: number;
+  bytesReceived: number;
+  finalPage: number;
+  mode: SourceSyncMode;
+}>;
 
 export type JobSort = 'created_desc' | 'created_asc' | 'progress_desc';
 
@@ -567,7 +687,8 @@ export interface Source {
   lastCheckAt?: string;
   rateLimitRemaining: number;
   rateLimitTotal: number;
-  quotaResetAt: string;
+  rateLimitUpdatedAt?: string;
+  quotaResetAt?: string;
   currentJobId?: string;
   lastError?: string;
   apiKeyConfigured: boolean;
@@ -601,6 +722,97 @@ export interface SourceConnectionResult {
   latencyMs: number;
   checkedAt: string;
   message: string;
+  quotaRemaining?: number;
+  quotaMax?: number;
+  hasMore?: boolean;
+}
+
+export type SourceSyncMode = 'AUTO' | 'INITIAL' | 'INCREMENTAL';
+
+export interface SourceSyncRequest {
+  mode: SourceSyncMode;
+  maxDocuments?: number;
+  maxPages?: number;
+  dryRun: boolean;
+}
+
+export interface SourceSyncState {
+  sourceId: string;
+  initialSyncCompletedAt?: string;
+  initialSnapshotTodate?: string;
+  nextPage: number;
+  incrementalWatermark?: string;
+  currentMode?: SourceSyncMode;
+  lastCheckpointAt?: string;
+  lastSeenQuestionActivityAt?: string;
+  lastSeenQuestionCreationAt?: string;
+  totalQuestionsFetched: number;
+  totalAnswersFetched: number;
+  totalDocumentsInserted: number;
+  totalDocumentsUpdated: number;
+  totalDocumentsUnchanged: number;
+  totalExactDuplicates: number;
+  totalItemsSkipped: number;
+  totalErrors: number;
+  totalChunksCreated: number;
+  lastJobId?: string;
+  state: JsonObject;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface IngestionStats {
+  documentsCount: number;
+  answersCount: number;
+  chunksCount: number;
+  revisionsCount: number;
+  failuresCount: number;
+  unresolvedFailuresCount: number;
+  processingStatuses: Record<string, number>;
+  deduplicationStatuses: Record<string, number>;
+  totalQuestionsFetched: number;
+  totalAnswersFetched: number;
+  totalDocumentsInserted: number;
+  totalDocumentsUpdated: number;
+  totalDocumentsUnchanged: number;
+  totalExactDuplicates: number;
+  totalItemsSkipped: number;
+  totalErrors: number;
+  totalChunksCreated: number;
+}
+
+export interface IngestionFailure {
+  id: string;
+  jobId: string;
+  sourceId: string;
+  documentId?: string;
+  externalId?: string;
+  entityType: string;
+  errorCode: string;
+  safeMessage: string;
+  retryable: boolean;
+  attempt: number;
+  context: JsonObject;
+  createdAt: string;
+  resolvedAt?: string;
+}
+
+export interface IngestionFailureFilters {
+  sourceId?: string;
+  jobId?: string;
+  documentId?: string;
+  externalId?: string;
+  errorCode?: string;
+  retryable?: 'all' | 'true' | 'false';
+  resolved?: 'all' | 'true' | 'false';
+  sort?: 'created_desc' | 'created_asc';
+  page: number;
+  limit: number;
+}
+
+export interface IngestionFailuresResponse {
+  items: IngestionFailure[];
+  pagination: Pagination;
 }
 
 export type AuditAction =
@@ -702,9 +914,16 @@ export interface SystemMetrics {
   modelSizeGb: number;
   dockerImagesEstimateGb: number;
   documentsCount: number;
+  answersCount: number;
   chunksCount: number;
+  revisionsCount: number;
+  failuresCount: number;
+  activeJobs: number;
+  lastIngestionAt?: string;
   applicationVersion: string;
 }
+
+export type WorkerStatus = Extract<SystemServiceStatus, 'ONLINE' | 'DEGRADED' | 'OFFLINE'>;
 
 export interface SystemHardware {
   operatingSystem: string;

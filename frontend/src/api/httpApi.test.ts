@@ -122,4 +122,47 @@ describe('HTTP API security boundary', () => {
       'X-CSRF-Token': 'second',
     });
   });
+
+  it('передаёт mode и безопасные limits при запуске SOURCE_SYNC', async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(jsonResponse({ csrfToken: 'sync-csrf' }))
+      .mockResolvedValueOnce(jsonResponse({ id: 'job-1' }));
+
+    await httpApi.startSourceSync('source/1', {
+      mode: 'INITIAL',
+      maxDocuments: 100,
+      maxPages: 2,
+      dryRun: false,
+    });
+
+    expect(fetchMock.mock.calls[1]?.[0]).toContain('/admin/sources/source%2F1/sync');
+    expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({
+      method: 'POST',
+      body: JSON.stringify({
+        mode: 'INITIAL',
+        maxDocuments: 100,
+        maxPages: 2,
+        dryRun: false,
+      }),
+    });
+  });
+
+  it('использует operational ingestion endpoints только через API layer', async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(async () => jsonResponse({ items: [], pagination: {} }));
+
+    await httpApi.getAdminJobEvents('job/1');
+    await httpApi.getManagedDocumentChunks('document/1');
+    await httpApi.getManagedDocumentRevisions('document/1');
+    await httpApi.getManagedDocumentFailures('document/1');
+
+    expect(fetchMock.mock.calls.map(([url]) => String(url))).toEqual([
+      expect.stringContaining('/admin/jobs/job%2F1/events'),
+      expect.stringContaining('/editor/documents/document%2F1/chunks'),
+      expect.stringContaining('/editor/documents/document%2F1/revisions'),
+      expect.stringContaining('/editor/documents/document%2F1/failures'),
+    ]);
+  });
 });

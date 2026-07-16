@@ -69,7 +69,7 @@ export function ManagedDocumentsPage() {
       <PageHeading
         eyebrow="DOCUMENT MANAGEMENT"
         title="Управляемые документы"
-        description="Оригинальный контент остаётся неизменным; редактор управляет нормализованными метаданными, видимостью и индексами."
+        description="Оригинальный контент остаётся неизменным; processing, deduplication и поисковые индексы показаны раздельно."
       />
       <section
         className="panel mb-4 grid gap-3 p-3 sm:grid-cols-2 xl:grid-cols-6"
@@ -293,13 +293,15 @@ function DesktopTable({
 }) {
   return (
     <div className="panel hidden overflow-x-auto md:block">
-      <table className="w-full min-w-[1180px] border-collapse text-left text-xs">
+      <table className="w-full min-w-[1380px] border-collapse text-left text-xs">
         <thead className="bg-elevated/70 text-muted">
           <tr>
             {[
               '',
               'ID / заголовок',
               'Статус',
+              'Обработка',
+              'Дедупликация',
               'Рейтинг',
               'Ответы',
               'Чанки',
@@ -365,6 +367,20 @@ function DocumentRow({
       <td className="px-3 py-3">
         <StatusBadge status={item.status} />
       </td>
+      <td className="px-3 py-3">
+        <StatusBadge status={item.processingStatus} />
+      </td>
+      <td className="px-3 py-3">
+        <StatusBadge status={item.deduplicationStatus} />
+        {item.duplicateOfDocumentId ? (
+          <Link
+            className="mt-1 block font-mono text-[9px] text-info hover:underline"
+            to={`/editor/documents/${item.duplicateOfDocumentId}`}
+          >
+            оригинал
+          </Link>
+        ) : null}
+      </td>
       <td className="px-3 py-3 font-mono">{item.original.score}</td>
       <td className="px-3 py-3">
         {item.original.answers.length}
@@ -428,6 +444,10 @@ function MobileCards({
             <span>
               Vector <b className="text-ink">{item.vectorStatus}</b>
             </span>
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <StatusBadge status={item.processingStatus} />
+            <StatusBadge status={item.deduplicationStatus} />
           </div>
           <div className="mt-3">
             <RowActions item={item} onAction={onAction} />

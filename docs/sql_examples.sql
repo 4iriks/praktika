@@ -128,3 +128,37 @@ SELECT s.name, state.current_mode, state.next_page, state.last_checkpoint_at,
 FROM sources AS s
 LEFT JOIN source_sync_states AS state ON state.source_id = s.id
 ORDER BY s.name, s.id;
+
+-- 17. Answers конкретного document и corpus selection.
+SELECT a.external_id, a.author_name, a.score, a.is_accepted,
+       a.selected_for_corpus, a.selection_rank, a.source_missing
+FROM answers AS a
+WHERE a.document_id = :document_id
+ORDER BY a.selection_rank NULLS LAST, a.score DESC, a.external_id;
+
+-- 18. Chunks конкретной версии документа.
+SELECT ordinal, section_type, token_count, character_count, has_code, content_hash
+FROM document_chunks
+WHERE document_id = :document_id
+ORDER BY document_version DESC, ordinal;
+
+-- 19. Progress и последнее событие активных jobs (LATERAL subquery).
+SELECT j.id, j.type, j.status, j.progress, j.heartbeat_at,
+       e.level, e.code, e.message, e.created_at
+FROM jobs AS j
+LEFT JOIN LATERAL (
+  SELECT level, code, message, created_at
+  FROM job_events
+  WHERE job_id = j.id
+  ORDER BY created_at DESC
+  LIMIT 1
+) AS e ON true
+WHERE j.status IN ('QUEUED', 'RUNNING')
+ORDER BY j.created_at, j.id;
+
+-- 20. Worker heartbeat.
+SELECT instance_id, status, current_job_id, heartbeat_at,
+       now() - heartbeat_at AS heartbeat_age
+FROM worker_instances
+ORDER BY heartbeat_at DESC, id
+LIMIT 20;

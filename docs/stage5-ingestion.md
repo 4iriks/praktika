@@ -1,4 +1,4 @@
-# PyAnswer — Этап 5, подэтапы 5.1–5.2
+# PyAnswer — Этап 5: Stack Exchange ingestion pipeline
 
 Подэтап 5.1 добавил durable PostgreSQL queue, отдельный worker и типизированный Stack Exchange
 client. Подэтап 5.2 завершает реальный `SOURCE_SYNC`: вопросы, ответы, теги, ревизии и чанки
@@ -74,5 +74,6 @@ make worker-health
 make worker-logs
 ```
 
-Live/full import не является автоматической проверкой 5.2. UI-интеграция, capped live smoke и
-полный runbook завершаются в подэтапе 5.3.
+Live/full import не является автоматической проверкой. Frontend читает sync state, job events,
+chunks/revisions/failures и системные aggregates через единый mock/HTTP interface. Capped и полный
+запуск описаны в `docs/ingestion-runbook.md`; полный corpus при разработке не загружался.

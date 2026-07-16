@@ -92,13 +92,19 @@ npm run format:check
 - [SQL-примеры](docs/sql_examples.sql);
 - [Worker architecture](docs/worker-architecture.md);
 - [Stack Exchange client](docs/stackexchange-client.md);
-- [Ingestion 5.1](docs/stage5-ingestion.md);
+- [Ingestion Этапа 5](docs/stage5-ingestion.md);
+- [Runbook полной загрузки](docs/ingestion-runbook.md);
 - сохранённые задания: [Этап 4](docs/prompts/stage-4.md) и
   [полный комплект Этапа 5](docs/prompts/stage-5.md) с отдельными промтами 5.1–5.3.
 
-## Границы подэтапа 5.1
+## Этап 5: ingestion Stack Exchange
 
-Backend не имитирует BM25, HNSW, embeddings, Qdrant, Ollama или RAG через SQL. Подэтап 5.1 не
-завершает весь ingestion pipeline: очистка, дедупликация и chunks появятся в 5.2, а полный импорт
-25 000 веток автоматически не запускается. Настоящие search/RAG будут подключены позднее;
-`/api/search` и `/api/ask` остаются честными 501 в HTTP mode.
+Отдельный worker обрабатывает durable PostgreSQL jobs с claim/lease/heartbeat, checkpoint,
+cancellation и stale recovery. Типизированный клиент получает вопросы постранично и ответы
+batch-запросами до 100 ID, соблюдает `has_more`, quota, backoff и ограниченные retries. Pipeline
+очищает HTML, сохраняет код, выбирает ответы, строит canonical SHA-256 hashes, revisions и
+детерминированные chunks. ADMIN/EDITOR UI показывает реальный прогресс и состояние корпуса.
+
+Полный импорт 25 000 веток автоматически не запускается; см. [runbook](docs/ingestion-runbook.md).
+BM25, HNSW, embeddings, Qdrant, Ollama и RAG не имитируются через SQL. `/api/search` и
+`/api/ask` остаются честными 501 в HTTP mode до Этапа 6.

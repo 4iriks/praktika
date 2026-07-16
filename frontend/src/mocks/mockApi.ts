@@ -547,6 +547,21 @@ export const mockApi: ApiClient = {
     maybeFail();
     return mockManagementRepository.getManagedDocument(documentId);
   },
+  async getManagedDocumentChunks(documentId, signal) {
+    await initializeData();
+    await delay(110, signal);
+    return mockManagementRepository.getManagedDocumentChunks(documentId);
+  },
+  async getManagedDocumentRevisions(documentId, signal) {
+    await initializeData();
+    await delay(110, signal);
+    return mockManagementRepository.getManagedDocumentRevisions(documentId);
+  },
+  async getManagedDocumentFailures(documentId, signal) {
+    await initializeData();
+    await delay(100, signal);
+    return mockManagementRepository.getManagedDocumentFailures(documentId);
+  },
   async updateDocumentMetadata(documentId, request) {
     await initializeData();
     await delay(160);
@@ -582,6 +597,11 @@ export const mockApi: ApiClient = {
     await delay(140, signal);
     maybeFail();
     return mockManagementRepository.getEditorJobs(filters);
+  },
+  async getEditorJobEvents(jobId, signal) {
+    await initializeData();
+    await delay(90, signal);
+    return mockManagementRepository.getEditorJobEvents(jobId);
   },
   async getAdminDashboard(signal) {
     await initializeData();
@@ -643,17 +663,37 @@ export const mockApi: ApiClient = {
     maybeFail();
     return mockManagementRepository.testSourceConnection(sourceIdValue);
   },
-  async startSourceSync(sourceIdValue) {
+  async getSourceSyncState(sourceIdValue, signal) {
+    await initializeData();
+    await delay(90, signal);
+    return mockManagementRepository.getSourceSyncState(sourceIdValue);
+  },
+  async startSourceSync(sourceIdValue, request) {
     await initializeData();
     await delay(150);
     maybeFail();
-    return mockManagementRepository.startSourceSync(sourceIdValue);
+    return mockManagementRepository.startSourceSync(sourceIdValue, request);
   },
   async stopSourceSync(sourceIdValue) {
     await initializeData();
     await delay(150);
     maybeFail();
     return mockManagementRepository.stopSourceSync(sourceIdValue);
+  },
+  async getIngestionStats(signal) {
+    await initializeData();
+    await delay(110, signal);
+    return mockManagementRepository.getIngestionStats();
+  },
+  async getIngestionFailures(filters, signal) {
+    await initializeData();
+    await delay(110, signal);
+    return mockManagementRepository.getIngestionFailures(filters);
+  },
+  async getIngestionFailure(failureId, signal) {
+    await initializeData();
+    await delay(90, signal);
+    return mockManagementRepository.getIngestionFailure(failureId);
   },
   async getAdminJobs(filters, signal) {
     await initializeData();
@@ -666,6 +706,11 @@ export const mockApi: ApiClient = {
     await delay(100, signal);
     maybeFail();
     return mockManagementRepository.getAdminJob(jobId);
+  },
+  async getAdminJobEvents(jobId, signal) {
+    await initializeData();
+    await delay(90, signal);
+    return mockManagementRepository.getAdminJobEvents(jobId);
   },
   async retryJob(jobId) {
     await initializeData();

@@ -95,6 +95,9 @@ Reindex только создаёт `QUEUED` job; indexer не запускае�
 - `GET /admin/sources/{sourceId}/sync-state` возвращает durable counters/checkpoint;
 - `GET /admin/ingestion/stats` возвращает SQL aggregates документов, ответов, chunks/revisions;
 - `GET /admin/ingestion/failures` и `/{failureId}` возвращают только sanitized diagnostics.
+- `GET /editor/documents/{documentId}/chunks` возвращает очищенные read-only chunks;
+- `GET /editor/documents/{documentId}/revisions` возвращает безопасные snapshots revisions;
+- `GET /editor/documents/{documentId}/failures` возвращает sanitized diagnostics документа.
 
 Пример тела start sync:
 

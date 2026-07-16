@@ -10,11 +10,13 @@ from app.core.enums import (
     AuditAction,
     AuditEntityType,
     AuditOutcome,
+    DeduplicationStatus,
     DocumentStatus,
     IndexStatus,
     JobStage,
     JobStatus,
     JobType,
+    ProcessingStatus,
     SourceStatus,
     SourceType,
     UserRole,
@@ -108,12 +110,31 @@ class ManagedDocumentOut(ApiModel):
     last_edited_at: datetime | None = None
     version: int
     source_id: UUID
+    processing_status: ProcessingStatus
+    deduplication_status: DeduplicationStatus
+    duplicate_of_document_id: UUID | None = None
+    metadata_hash: str | None = None
+    processing_error: str | None = None
+    selected_answers_count: int
+    source_updated_at: datetime | None = None
+    last_seen_at: datetime | None = None
     original: DocumentOut
+
+
+class SelectedAnswerSummaryOut(ApiModel):
+    id: UUID
+    external_id: str
+    author_name: str
+    score: int
+    is_accepted: bool
+    selection_rank: int | None = None
+    source_missing: bool
 
 
 class ManagedDocumentDetailOut(ManagedDocumentOut):
     audit_events: list[AuditEventOut]
     related_jobs: list[BackgroundJobOut]
+    selected_answers: list[SelectedAnswerSummaryOut]
 
 
 class ManagedDocumentsResponse(ApiModel):
@@ -290,7 +311,12 @@ class SystemMetricsOut(ApiModel):
     model_size_gb: float
     docker_images_estimate_gb: float
     documents_count: int
+    answers_count: int
     chunks_count: int
+    revisions_count: int
+    failures_count: int
+    active_jobs: int
+    last_ingestion_at: datetime | None = None
     application_version: str
 
 

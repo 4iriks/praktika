@@ -16,18 +16,25 @@ import type {
   BulkDocumentResult,
   ChangeRoleRequest,
   Document,
+  DocumentChunksResponse,
+  DocumentRevisionsResponse,
   EditorDashboard,
   Feedback,
   FeedbackRequest,
   HistoryFilters,
   HistoryResponse,
+  IngestionFailure,
   JobFilters,
+  JobEventsResponse,
   JobsResponse,
   LoginRequest,
   ManagedDocumentDetail,
   ManagedDocumentFilters,
   ManagedDocumentsResponse,
   ManagedDocumentUpdate,
+  IngestionFailureFilters,
+  IngestionFailuresResponse,
+  IngestionStats,
   PublicAccessPolicy,
   PublicSystemStatus,
   RegisterRequest,
@@ -39,6 +46,8 @@ import type {
   Source,
   SourceConnectionResult,
   SourceFilters,
+  SourceSyncRequest,
+  SourceSyncState,
   SourcesResponse,
   SourceUpdateRequest,
   SystemSettings,
@@ -85,6 +94,18 @@ export interface ApiClient {
     signal?: AbortSignal,
   ): Promise<ManagedDocumentsResponse>;
   getManagedDocument(documentId: string, signal?: AbortSignal): Promise<ManagedDocumentDetail>;
+  getManagedDocumentChunks(
+    documentId: string,
+    signal?: AbortSignal,
+  ): Promise<DocumentChunksResponse>;
+  getManagedDocumentRevisions(
+    documentId: string,
+    signal?: AbortSignal,
+  ): Promise<DocumentRevisionsResponse>;
+  getManagedDocumentFailures(
+    documentId: string,
+    signal?: AbortSignal,
+  ): Promise<IngestionFailuresResponse>;
   updateDocumentMetadata(
     documentId: string,
     request: ManagedDocumentUpdate,
@@ -94,6 +115,7 @@ export interface ApiClient {
   reindexDocument(documentId: string): Promise<BackgroundJob>;
   bulkUpdateDocuments(request: BulkDocumentRequest): Promise<BulkDocumentResult>;
   getEditorJobs(filters: JobFilters, signal?: AbortSignal): Promise<JobsResponse>;
+  getEditorJobEvents(jobId: string, signal?: AbortSignal): Promise<JobEventsResponse>;
 
   getAdminDashboard(signal?: AbortSignal): Promise<AdminDashboard>;
   getAdminUsers(filters: AdminUserFilters, signal?: AbortSignal): Promise<AdminUsersResponse>;
@@ -106,11 +128,19 @@ export interface ApiClient {
   getSource(sourceId: string, signal?: AbortSignal): Promise<Source>;
   updateSource(sourceId: string, request: SourceUpdateRequest): Promise<Source>;
   testSourceConnection(sourceId: string): Promise<SourceConnectionResult>;
-  startSourceSync(sourceId: string): Promise<BackgroundJob>;
+  getSourceSyncState(sourceId: string, signal?: AbortSignal): Promise<SourceSyncState>;
+  startSourceSync(sourceId: string, request?: SourceSyncRequest): Promise<BackgroundJob>;
   stopSourceSync(sourceId: string): Promise<BackgroundJob>;
+  getIngestionStats(signal?: AbortSignal): Promise<IngestionStats>;
+  getIngestionFailures(
+    filters: IngestionFailureFilters,
+    signal?: AbortSignal,
+  ): Promise<IngestionFailuresResponse>;
+  getIngestionFailure(failureId: string, signal?: AbortSignal): Promise<IngestionFailure>;
 
   getAdminJobs(filters: JobFilters, signal?: AbortSignal): Promise<JobsResponse>;
   getAdminJob(jobId: string, signal?: AbortSignal): Promise<BackgroundJob>;
+  getAdminJobEvents(jobId: string, signal?: AbortSignal): Promise<JobEventsResponse>;
   retryJob(jobId: string): Promise<BackgroundJob>;
   cancelJob(jobId: string): Promise<BackgroundJob>;
   startFullReindex(): Promise<BackgroundJob>;

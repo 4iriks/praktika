@@ -33,6 +33,7 @@ from app.schemas.management import (
     ManagedDocumentDetailOut,
     ManagedDocumentsResponse,
     ManagedDocumentUpdate,
+    SelectedAnswerSummaryOut,
 )
 from app.services.audit import add_audit_event
 from app.services.content import document_statement, get_document
@@ -69,6 +70,21 @@ async def managed_detail(db: AsyncSession, document: Document) -> ManagedDocumen
         **base.model_dump(),
         audit_events=[audit_to_schema(item) for item in audit],
         related_jobs=[job_to_schema(item) for item in jobs],
+        selected_answers=[
+            SelectedAnswerSummaryOut(
+                id=answer.id,
+                external_id=answer.external_id,
+                author_name=answer.author_name,
+                score=answer.score,
+                is_accepted=answer.is_accepted,
+                selection_rank=answer.selection_rank,
+                source_missing=answer.source_missing,
+            )
+            for answer in sorted(
+                (item for item in document.answers if item.selected_for_corpus),
+                key=lambda item: (item.selection_rank or 10_000, item.external_id),
+            )
+        ],
     )
 
 

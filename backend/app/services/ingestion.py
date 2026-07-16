@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import InstrumentedAttribute
 
 from app.api.errors import ApiException
-from app.core.enums import JobEventLevel, JobStage, SourceSyncMode
+from app.core.enums import ChunkSectionType, JobEventLevel, JobStage, SourceSyncMode
 from app.db.models.content import Answer, Document, DocumentChunk, DocumentRevision
 from app.db.models.operations import (
     IngestionFailure,
@@ -19,6 +19,10 @@ from app.db.models.operations import (
 from app.db.repositories.jobs import sanitize_job_event_metrics
 from app.schemas.base import pagination
 from app.schemas.ingestion import (
+    DocumentChunkOut,
+    DocumentChunksResponse,
+    DocumentRevisionOut,
+    DocumentRevisionsResponse,
     IngestionFailureOut,
     IngestionFailuresResponse,
     IngestionStatsOut,
@@ -136,6 +140,7 @@ async def list_ingestion_failures(
     *,
     source_id: UUID | None,
     job_id: UUID | None,
+    document_id: UUID | None,
     external_id: str,
     error_code: str,
     retryable: str,
@@ -149,6 +154,8 @@ async def list_ingestion_failures(
         filters.append(IngestionFailure.source_id == source_id)
     if job_id is not None:
         filters.append(IngestionFailure.job_id == job_id)
+    if document_id is not None:
+        filters.append(IngestionFailure.document_id == document_id)
     if external_id.strip():
         filters.append(IngestionFailure.external_id == external_id.strip())
     if error_code.strip():
@@ -178,6 +185,133 @@ async def list_ingestion_failures(
         items=[ingestion_failure_to_schema(failure) for failure in failures],
         pagination=pagination(page, limit, total),
     )
+
+
+async def list_document_failures(
+    db: AsyncSession,
+    document_id: UUID,
+    *,
+    page: int,
+    limit: int,
+) -> IngestionFailuresResponse:
+    await _require_document(db, document_id)
+    return await list_ingestion_failures(
+        db,
+        source_id=None,
+        job_id=None,
+        document_id=document_id,
+        external_id="",
+        error_code="",
+        retryable="all",
+        resolved="all",
+        sort="created_desc",
+        page=page,
+        limit=limit,
+    )
+
+
+async def list_document_chunks(
+    db: AsyncSession,
+    document_id: UUID,
+    *,
+    page: int,
+    limit: int,
+) -> DocumentChunksResponse:
+    await _require_document(db, document_id)
+    total = (
+        await db.scalar(
+            select(func.count())
+            .select_from(DocumentChunk)
+            .where(DocumentChunk.document_id == document_id)
+        )
+        or 0
+    )
+    chunks = (
+        await db.scalars(
+            select(DocumentChunk)
+            .where(DocumentChunk.document_id == document_id)
+            .order_by(
+                DocumentChunk.document_version.desc(),
+                DocumentChunk.ordinal.asc(),
+                DocumentChunk.id,
+            )
+            .offset((page - 1) * limit)
+            .limit(limit)
+        )
+    ).all()
+    return DocumentChunksResponse(
+        items=[
+            DocumentChunkOut(
+                id=chunk.id,
+                chunk_key=chunk.chunk_key,
+                document_id=chunk.document_id,
+                document_version=chunk.document_version,
+                ordinal=chunk.ordinal,
+                section_type=ChunkSectionType(chunk.section_type),
+                answer_id=chunk.answer_id,
+                text=chunk.text,
+                contextual_text=chunk.contextual_text,
+                content_hash=chunk.content_hash,
+                token_count=chunk.token_count,
+                character_count=chunk.character_count,
+                has_code=chunk.has_code,
+                language=chunk.language,
+                created_at=chunk.created_at,
+                updated_at=chunk.updated_at,
+            )
+            for chunk in chunks
+        ],
+        pagination=pagination(page, limit, total),
+    )
+
+
+async def list_document_revisions(
+    db: AsyncSession,
+    document_id: UUID,
+    *,
+    page: int,
+    limit: int,
+) -> DocumentRevisionsResponse:
+    await _require_document(db, document_id)
+    total = (
+        await db.scalar(
+            select(func.count())
+            .select_from(DocumentRevision)
+            .where(DocumentRevision.document_id == document_id)
+        )
+        or 0
+    )
+    revisions = (
+        await db.scalars(
+            select(DocumentRevision)
+            .where(DocumentRevision.document_id == document_id)
+            .order_by(DocumentRevision.version.desc(), DocumentRevision.id)
+            .offset((page - 1) * limit)
+            .limit(limit)
+        )
+    ).all()
+    return DocumentRevisionsResponse(
+        items=[
+            DocumentRevisionOut(
+                id=revision.id,
+                document_id=revision.document_id,
+                version=revision.version,
+                content_hash=revision.content_hash,
+                metadata_hash=revision.metadata_hash,
+                source_updated_at=revision.source_updated_at,
+                snapshot=revision.snapshot,
+                change_reason=revision.change_reason,
+                created_at=revision.created_at,
+            )
+            for revision in revisions
+        ],
+        pagination=pagination(page, limit, total),
+    )
+
+
+async def _require_document(db: AsyncSession, document_id: UUID) -> None:
+    if await db.get(Document, document_id) is None:
+        raise ApiException(404, "NOT_FOUND", "Документ не найден")
 
 
 async def ingestion_stats(db: AsyncSession) -> IngestionStatsOut:

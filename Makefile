@@ -7,7 +7,8 @@ COMPOSE ?= $(shell if docker compose version >/dev/null 2>&1; then \
 	fi)
 
 .PHONY: backend-up backend-test backend-lint backend-migrate backend-seed backend-logs \
-	worker-up worker-logs worker-health
+	worker-up worker-logs worker-health sync-smoke sync-incremental ingestion-report \
+	sync-full-confirmed
 
 backend-up:
 	$(COMPOSE) up -d postgres backend
@@ -34,6 +35,24 @@ worker-logs:
 	$(COMPOSE) logs -f worker
 
 worker-health:
-	$(COMPOSE) ps worker
-	$(COMPOSE) exec -T postgres sh -c 'psql --no-psqlrc -U "$$POSTGRES_USER" -d "$$POSTGRES_DB" \
-		-c "SELECT instance_id, status, current_job_id, heartbeat_at, now() - heartbeat_at AS heartbeat_age FROM worker_instances ORDER BY heartbeat_at DESC LIMIT 5"'
+	$(COMPOSE) run --rm worker python -m app.scripts.worker_health
+
+sync-smoke:
+	@test -n "$(SOURCE_ID)" || (echo "Укажите SOURCE_ID=<uuid>" && exit 1)
+	$(COMPOSE) run --rm worker python -m app.scripts.enqueue_sync $(SOURCE_ID) \
+		--mode INITIAL --max-documents 100 --max-pages 2
+
+sync-incremental:
+	@test -n "$(SOURCE_ID)" || (echo "Укажите SOURCE_ID=<uuid>" && exit 1)
+	$(COMPOSE) run --rm worker python -m app.scripts.enqueue_sync $(SOURCE_ID) \
+		--mode INCREMENTAL --max-pages 2
+
+ingestion-report:
+	$(COMPOSE) run --rm worker python -m app.scripts.ingestion_report
+
+sync-full-confirmed:
+	@test "$(CONFIRM_FULL_SYNC)" = "YES" || \
+		(echo "Полный импорт не запущен. Требуется CONFIRM_FULL_SYNC=YES" && exit 1)
+	@test -n "$(SOURCE_ID)" || (echo "Укажите SOURCE_ID=<uuid>" && exit 1)
+	$(COMPOSE) run --rm -e CONFIRM_FULL_SYNC=YES worker \
+		python -m app.scripts.enqueue_sync $(SOURCE_ID) --mode INITIAL

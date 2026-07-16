@@ -16,9 +16,9 @@ from app.core.enums import (
     WorkerInstanceStatus,
 )
 from app.db.base import utc_now
-from app.db.models.content import Document
+from app.db.models.content import Answer, Document, DocumentChunk, DocumentRevision
 from app.db.models.identity import User
-from app.db.models.operations import Job, SystemSetting, WorkerInstance
+from app.db.models.operations import IngestionFailure, Job, SystemSetting, WorkerInstance
 from app.schemas.content import PublicAccessPolicyOut
 from app.schemas.management import (
     SystemHardwareOut,
@@ -102,7 +102,21 @@ async def system_status(db: AsyncSession) -> SystemStatusOut:
     await db.execute(text("SELECT 1"))
     latency = max(1, round((time.perf_counter() - started) * 1000))
     documents = await db.scalar(select(func.count()).select_from(Document)) or 0
-    chunks = await db.scalar(select(func.coalesce(func.sum(Document.chunks_count), 0))) or 0
+    answers = await db.scalar(select(func.count()).select_from(Answer)) or 0
+    chunks = await db.scalar(select(func.count()).select_from(DocumentChunk)) or 0
+    revisions = await db.scalar(select(func.count()).select_from(DocumentRevision)) or 0
+    failures = await db.scalar(select(func.count()).select_from(IngestionFailure)) or 0
+    active_jobs = (
+        await db.scalar(
+            select(func.count())
+            .select_from(Job)
+            .where(Job.status.in_([JobStatus.QUEUED, JobStatus.RUNNING]))
+        )
+        or 0
+    )
+    last_ingestion_at = await db.scalar(
+        select(func.max(Job.updated_at)).where(Job.type == JobType.SOURCE_SYNC)
+    )
     database_bytes = await db.scalar(select(func.pg_database_size(func.current_database()))) or 0
     services = [
         SystemServiceOut(
@@ -201,7 +215,12 @@ async def system_status(db: AsyncSession) -> SystemStatusOut:
             model_size_gb=0,
             docker_images_estimate_gb=0,
             documents_count=documents,
+            answers_count=answers,
             chunks_count=chunks,
+            revisions_count=revisions,
+            failures_count=failures,
+            active_jobs=active_jobs,
+            last_ingestion_at=last_ingestion_at,
             application_version=config.app_version,
         ),
         hardware=SystemHardwareOut(

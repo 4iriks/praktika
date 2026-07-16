@@ -9,7 +9,12 @@ from app.api.dependencies import DB, require_all_permissions, require_permission
 from app.api.pagination import parse_optional_datetime
 from app.core.enums import Permission
 from app.db.models.identity import User
-from app.schemas.ingestion import JobEventsResponse
+from app.schemas.ingestion import (
+    DocumentChunksResponse,
+    DocumentRevisionsResponse,
+    IngestionFailuresResponse,
+    JobEventsResponse,
+)
 from app.schemas.management import (
     BackgroundJobOut,
     BulkDocumentRequest,
@@ -32,7 +37,12 @@ from app.services.editor import (
     restore_document,
     update_metadata,
 )
-from app.services.ingestion import list_job_events
+from app.services.ingestion import (
+    list_document_chunks,
+    list_document_failures,
+    list_document_revisions,
+    list_job_events,
+)
 
 router = APIRouter(prefix="/editor", tags=["editor"])
 EditorViewer = Annotated[User, Depends(require_permission(Permission.MANAGED_DOCUMENTS_VIEW))]
@@ -110,6 +120,54 @@ async def bulk(
     payload: BulkDocumentRequest, request: Request, db: DB, actor: BulkEditor
 ) -> BulkDocumentResultOut:
     return await bulk_documents(db, request, actor, payload)
+
+
+@router.get(
+    "/documents/{document_id}/chunks",
+    response_model=DocumentChunksResponse,
+    summary="Получить чанки документа",
+    operation_id="getManagedDocumentChunks",
+)
+async def document_chunks(
+    document_id: UUID,
+    db: DB,
+    actor: EditorViewer,
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
+) -> DocumentChunksResponse:
+    return await list_document_chunks(db, document_id, page=page, limit=limit)
+
+
+@router.get(
+    "/documents/{document_id}/revisions",
+    response_model=DocumentRevisionsResponse,
+    summary="Получить ревизии документа",
+    operation_id="getManagedDocumentRevisions",
+)
+async def document_revisions(
+    document_id: UUID,
+    db: DB,
+    actor: EditorViewer,
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
+) -> DocumentRevisionsResponse:
+    return await list_document_revisions(db, document_id, page=page, limit=limit)
+
+
+@router.get(
+    "/documents/{document_id}/failures",
+    response_model=IngestionFailuresResponse,
+    summary="Получить безопасные ошибки ingestion документа",
+    operation_id="getManagedDocumentFailures",
+)
+async def document_failures(
+    document_id: UUID,
+    db: DB,
+    actor: EditorViewer,
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
+) -> IngestionFailuresResponse:
+    return await list_document_failures(db, document_id, page=page, limit=limit)
 
 
 @router.get(

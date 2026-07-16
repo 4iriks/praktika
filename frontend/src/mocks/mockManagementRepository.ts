@@ -7,9 +7,17 @@ import type {
   BackgroundJob,
   BulkDocumentRequest,
   BulkDocumentResult,
+  DocumentChunksResponse,
+  DocumentRevisionsResponse,
   Document,
   DocumentStatus,
   EditorDashboard,
+  IngestionFailure,
+  IngestionFailureFilters,
+  IngestionFailuresResponse,
+  IngestionStats,
+  JobEvent,
+  JobEventsResponse,
   JobFilters,
   JobsResponse,
   ManagedDocument,
@@ -20,6 +28,8 @@ import type {
   Source,
   SourceConnectionResult,
   SourceFilters,
+  SourceSyncRequest,
+  SourceSyncState,
   SourcesResponse,
   SourceUpdateRequest,
   SystemSettings,
@@ -145,7 +155,17 @@ function isStoredSystemStatus(value: unknown): value is SystemStatus {
 }
 
 function managedRecords(): ManagedRecord[] {
-  return readArray(window.localStorage, mockStorageKeys.managedDocuments, isManagedRecord);
+  return readArray(window.localStorage, mockStorageKeys.managedDocuments, isManagedRecord).map(
+    (record) => ({
+      ...record,
+      processingStatus: record.processingStatus ?? 'CHUNKED',
+      deduplicationStatus: record.deduplicationStatus ?? 'UNIQUE',
+      selectedAnswersCount:
+        record.selectedAnswersCount ?? Math.min(4, documentById(record.documentId).answers.length),
+      sourceUpdatedAt: record.sourceUpdatedAt ?? record.lastSyncedAt,
+      lastSeenAt: record.lastSeenAt ?? record.lastSyncedAt,
+    }),
+  );
 }
 
 function saveManaged(records: ManagedRecord[]): void {
@@ -216,6 +236,13 @@ function seedManagedDocuments(): void {
       hiddenReason: status === 'HIDDEN' ? 'Материал временно снят с публикации.' : undefined,
       version: 1,
       sourceId,
+      processingStatus: status === 'FAILED' ? 'FAILED' : 'CHUNKED',
+      deduplicationStatus: 'UNIQUE',
+      selectedAnswersCount: Math.min(4, document.answers.length),
+      metadataHash: `${document.contentHash}-metadata`,
+      processingError: status === 'FAILED' ? 'Ошибка подготовки mock-документа.' : undefined,
+      sourceUpdatedAt: document.indexedAt,
+      lastSeenAt: document.indexedAt,
     });
     changed = true;
   }
@@ -554,6 +581,102 @@ function getManagedDocument(documentId: string): ManagedDocumentDetail {
     relatedJobs: jobs
       .filter((job) => job.documentId === documentId)
       .sort((left, right) => right.createdAt.localeCompare(left.createdAt)),
+    selectedAnswers: documentById(documentId)
+      .answers.slice(0, 4)
+      .map((answer, index) => ({
+        id: answer.id,
+        externalId: answer.id,
+        authorName: answer.author,
+        score: answer.score,
+        isAccepted: answer.accepted,
+        selectionRank: index + 1,
+        sourceMissing: false,
+      })),
+  };
+}
+
+function getManagedDocumentChunks(documentId: string): DocumentChunksResponse {
+  mockRepository.requirePermission('MANAGED_DOCUMENTS_VIEW');
+  const document = getManagedDocument(documentId);
+  const createdAt = document.lastSyncedAt;
+  const texts = [
+    document.original.question.body,
+    ...document.original.answers.slice(0, 3).map((a) => a.body),
+  ];
+  const items = texts.filter(Boolean).map((text, ordinal) => ({
+    id: `chunk-${documentId}-${ordinal}`,
+    chunkKey: `mock-${documentId}-${document.version}-${ordinal}`,
+    documentId,
+    documentVersion: document.version,
+    ordinal,
+    sectionType: ordinal === 0 ? ('QUESTION' as const) : ('ANSWER' as const),
+    answerId: ordinal > 0 ? document.original.answers[ordinal - 1]?.id : undefined,
+    text,
+    contextualText: `${document.normalizedTitle}\n${document.managedTags.join(', ')}\n${text}`,
+    contentHash: `${document.contentHash}-${ordinal}`,
+    tokenCount: Math.max(1, Math.ceil(text.length / 4)),
+    characterCount: text.length,
+    hasCode: text.includes('```'),
+    createdAt,
+    updatedAt: createdAt,
+  }));
+  return {
+    items,
+    pagination: { page: 1, pageSize: 20, total: items.length, totalPages: 1 },
+  };
+}
+
+function getManagedDocumentRevisions(documentId: string): DocumentRevisionsResponse {
+  mockRepository.requirePermission('MANAGED_DOCUMENTS_VIEW');
+  const document = getManagedDocument(documentId);
+  return {
+    items: [
+      {
+        id: `revision-${documentId}-${document.version}`,
+        documentId,
+        version: document.version,
+        contentHash: document.contentHash,
+        metadataHash: document.metadataHash ?? `${document.contentHash}-metadata`,
+        sourceUpdatedAt: document.sourceUpdatedAt,
+        snapshot: {
+          title: document.normalizedTitle,
+          tags: document.managedTags,
+          selectedAnswers: document.selectedAnswers.map((answer) => answer.externalId),
+        },
+        changeReason: 'MOCK_IMPORT',
+        createdAt: document.lastSyncedAt,
+      },
+    ],
+    pagination: { page: 1, pageSize: 20, total: 1, totalPages: 1 },
+  };
+}
+
+function mockIngestionFailures(): IngestionFailure[] {
+  return managedRecords()
+    .filter((document) => document.processingStatus === 'FAILED' || Boolean(document.failureReason))
+    .map((document, index) => ({
+      id: `failure-${document.documentId}`,
+      jobId: `job-failure-${index + 1}`,
+      sourceId: document.sourceId,
+      documentId: document.documentId,
+      externalId: document.documentId,
+      entityType: 'QUESTION',
+      errorCode: document.failureReason ?? 'PROCESSING_FAILED',
+      safeMessage: document.processingError ?? 'Документ не удалось подготовить.',
+      retryable: true,
+      attempt: 1,
+      context: { stage: 'PROCESSING' },
+      createdAt: document.lastSyncedAt,
+    }));
+}
+
+function getManagedDocumentFailures(documentId: string): IngestionFailuresResponse {
+  mockRepository.requirePermission('MANAGED_DOCUMENTS_VIEW');
+  recordById(documentId);
+  const items = mockIngestionFailures().filter((failure) => failure.documentId === documentId);
+  return {
+    items,
+    pagination: { page: 1, pageSize: 20, total: items.length, totalPages: 1 },
   };
 }
 
@@ -879,6 +1002,61 @@ function getAdminJob(jobId: string): BackgroundJob {
   return job;
 }
 
+function eventsForJob(job: BackgroundJob): JobEvent[] {
+  const events: JobEvent[] = [
+    {
+      id: `${job.id}-created`,
+      jobId: job.id,
+      level: 'INFO',
+      stage: 'PREPARING',
+      code: 'JOB_CREATED',
+      message: 'Задание добавлено в durable mock-очередь.',
+      metrics: { totalItems: job.totalItems },
+      createdAt: job.createdAt,
+    },
+  ];
+  if (job.startedAt) {
+    events.push({
+      id: `${job.id}-started`,
+      jobId: job.id,
+      level: 'INFO',
+      stage: job.stage,
+      code: 'JOB_CLAIMED',
+      message: 'Mock worker получил задание.',
+      metrics: { progress: job.progress },
+      createdAt: job.startedAt,
+    });
+  }
+  if (job.finishedAt) {
+    events.push({
+      id: `${job.id}-finished`,
+      jobId: job.id,
+      level: job.status === 'FAILED' ? 'ERROR' : 'INFO',
+      stage: job.stage,
+      code: `JOB_${job.status}`,
+      message: job.errorMessage ?? `Задание завершено со статусом ${job.status}.`,
+      metrics: { processedItems: job.processedItems },
+      createdAt: job.finishedAt,
+    });
+  }
+  return events;
+}
+
+function getEditorJobEvents(jobId: string): JobEventsResponse {
+  mockRepository.requirePermission('EDITOR_JOBS_VIEW');
+  const job = refreshJobs().find((item) => item.id === jobId);
+  if (!job) throw new ApiError('Задание не найдено.', 404, 'NOT_FOUND');
+  const items = eventsForJob(job);
+  return { items, pagination: { page: 1, pageSize: 50, total: items.length, totalPages: 1 } };
+}
+
+function getAdminJobEvents(jobId: string): JobEventsResponse {
+  mockRepository.requirePermission('ADMIN_JOBS_MANAGE');
+  const job = getAdminJob(jobId);
+  const items = eventsForJob(job);
+  return { items, pagination: { page: 1, pageSize: 50, total: items.length, totalPages: 1 } };
+}
+
 function cancelJob(jobId: string): BackgroundJob {
   const actor = mockRepository.requirePermission('ADMIN_JOBS_MANAGE');
   const jobs = refreshJobs();
@@ -1056,6 +1234,39 @@ function getSource(id: string): Source {
   return source;
 }
 
+function getSourceSyncState(id: string): SourceSyncState {
+  mockRepository.requirePermission('SOURCES_MANAGE');
+  const source = getSource(id);
+  const activeJob = refreshJobs().find(
+    (job) => job.sourceId === id && ['QUEUED', 'RUNNING'].includes(job.status),
+  );
+  const timestamp = source.lastSuccessfulSyncAt ?? source.createdAt;
+  return {
+    sourceId: id,
+    initialSyncCompletedAt: source.lastSuccessfulSyncAt,
+    initialSnapshotTodate: source.lastSuccessfulSyncAt,
+    nextPage: Math.max(1, Math.ceil(source.documentsCount / source.pageSize) + 1),
+    incrementalWatermark: source.lastSuccessfulSyncAt,
+    currentMode: activeJob ? 'AUTO' : undefined,
+    lastCheckpointAt: source.lastSyncAt,
+    lastSeenQuestionActivityAt: source.lastSuccessfulSyncAt,
+    lastSeenQuestionCreationAt: source.lastSuccessfulSyncAt,
+    totalQuestionsFetched: source.documentsCount,
+    totalAnswersFetched: source.documentsCount * 2,
+    totalDocumentsInserted: source.documentsCount,
+    totalDocumentsUpdated: 18,
+    totalDocumentsUnchanged: 420,
+    totalExactDuplicates: 3,
+    totalItemsSkipped: 2,
+    totalErrors: mockIngestionFailures().length,
+    totalChunksCreated: managedRecords().reduce((sum, document) => sum + document.chunksCount, 0),
+    lastJobId: activeJob?.id,
+    state: { mock: true, currentPage: Math.max(1, Math.ceil(source.documentsCount / 100)) },
+    createdAt: source.createdAt,
+    updatedAt: timestamp,
+  };
+}
+
 function validateSourceUpdate(update: SourceUpdateRequest): void {
   if (
     update.targetDocuments !== undefined &&
@@ -1157,7 +1368,7 @@ function testSourceConnection(id: string): SourceConnectionResult {
   };
 }
 
-function startSourceSync(id: string): BackgroundJob {
+function startSourceSync(id: string, request?: SourceSyncRequest): BackgroundJob {
   const actor = mockRepository.requirePermission('SOURCES_MANAGE');
   const sources = storedSources();
   const index = sources.findIndex((source) => source.id === id);
@@ -1181,7 +1392,7 @@ function startSourceSync(id: string): BackgroundJob {
     type: 'SOURCE_SYNC',
     sourceId: id,
     createdBy: actor.id,
-    totalItems: source.targetDocuments,
+    totalItems: request?.maxDocuments ?? source.targetDocuments,
     plannedDurationMs: 180_000,
   });
   sources[index] = {
@@ -1199,9 +1410,99 @@ function startSourceSync(id: string): BackgroundJob {
     entityId: id,
     entityLabel: source.name,
     summary: 'Запущена синхронизация источника',
-    metadata: { jobId: job.id },
+    metadata: {
+      jobId: job.id,
+      mode: request?.mode ?? 'AUTO',
+      maxDocuments: request?.maxDocuments ?? null,
+      maxPages: request?.maxPages ?? null,
+      dryRun: request?.dryRun ?? false,
+    },
   });
   return job;
+}
+
+function getIngestionStats(): IngestionStats {
+  mockRepository.requirePermission('SOURCES_MANAGE');
+  const documents = managedRecords();
+  const failures = mockIngestionFailures();
+  const processingStatuses = Object.fromEntries(
+    ['RAW', 'CLEANING', 'CLEANED', 'CHUNKING', 'CHUNKED', 'FAILED'].map((status) => [
+      status,
+      documents.filter((document) => document.processingStatus === status).length,
+    ]),
+  );
+  const deduplicationStatuses = Object.fromEntries(
+    ['UNIQUE', 'EXACT_DUPLICATE', 'POSSIBLE_DUPLICATE'].map((status) => [
+      status,
+      documents.filter((document) => document.deduplicationStatus === status).length,
+    ]),
+  );
+  return {
+    documentsCount: documents.length,
+    answersCount: mockDocuments.reduce((sum, document) => sum + document.answers.length, 0),
+    chunksCount: documents.reduce((sum, document) => sum + document.chunksCount, 0),
+    revisionsCount: documents.length,
+    failuresCount: failures.length,
+    unresolvedFailuresCount: failures.filter((failure) => !failure.resolvedAt).length,
+    processingStatuses,
+    deduplicationStatuses,
+    totalQuestionsFetched: documents.length,
+    totalAnswersFetched: mockDocuments.reduce((sum, document) => sum + document.answers.length, 0),
+    totalDocumentsInserted: documents.length,
+    totalDocumentsUpdated: 0,
+    totalDocumentsUnchanged: 0,
+    totalExactDuplicates: documents.filter(
+      (document) => document.deduplicationStatus === 'EXACT_DUPLICATE',
+    ).length,
+    totalItemsSkipped: 0,
+    totalErrors: failures.length,
+    totalChunksCreated: documents.reduce((sum, document) => sum + document.chunksCount, 0),
+  };
+}
+
+function getIngestionFailures(filters: IngestionFailureFilters): IngestionFailuresResponse {
+  mockRepository.requirePermission('SOURCES_MANAGE');
+  let items = mockIngestionFailures()
+    .filter((failure) => !filters.sourceId || failure.sourceId === filters.sourceId)
+    .filter((failure) => !filters.jobId || failure.jobId === filters.jobId)
+    .filter((failure) => !filters.documentId || failure.documentId === filters.documentId)
+    .filter((failure) => !filters.externalId || failure.externalId === filters.externalId)
+    .filter((failure) => !filters.errorCode || failure.errorCode === filters.errorCode)
+    .filter(
+      (failure) =>
+        !filters.retryable ||
+        filters.retryable === 'all' ||
+        String(failure.retryable) === filters.retryable,
+    )
+    .filter(
+      (failure) =>
+        !filters.resolved ||
+        filters.resolved === 'all' ||
+        String(Boolean(failure.resolvedAt)) === filters.resolved,
+    );
+  items = items.sort((left, right) =>
+    filters.sort === 'created_asc'
+      ? left.createdAt.localeCompare(right.createdAt)
+      : right.createdAt.localeCompare(left.createdAt),
+  );
+  const total = items.length;
+  const offset = (filters.page - 1) * filters.limit;
+  return {
+    items: items.slice(offset, offset + filters.limit),
+    pagination: {
+      page: filters.page,
+      pageSize: filters.limit,
+      total,
+      totalPages: Math.max(1, Math.ceil(total / filters.limit)),
+    },
+  };
+}
+
+function getIngestionFailure(failureId: string): IngestionFailure {
+  mockRepository.requirePermission('SOURCES_MANAGE');
+  const failure = mockIngestionFailures().find((item) => item.id === failureId);
+  if (!failure) throw new ApiError('Ошибка ingestion не найдена.', 404, 'NOT_FOUND');
+  return failure;
 }
 
 function stopSourceSync(id: string): BackgroundJob {
@@ -1288,14 +1589,14 @@ function systemStatus(lastCheckAt = now()): SystemStatus {
       ['frontend', 'Frontend', 'ONLINE', 4, '1.3.0', 'Vite production bundle готов'],
       ['api', 'Backend API', 'ONLINE', 18, 'mock', 'Работает mock adapter'],
       ['postgresql', 'PostgreSQL', 'ONLINE', 7, '16.3', 'Синтетический статус'],
-      ['qdrant', 'Qdrant', 'ONLINE', 12, '1.9', 'Синтетический статус'],
-      ['ollama', 'Ollama', 'DEGRADED', 34, '0.2', 'Модель доступна в mock-режиме'],
+      ['qdrant', 'Qdrant', 'OFFLINE', 0, 'not configured', 'Не настроено на Этапе 5'],
+      ['ollama', 'Ollama', 'OFFLINE', 0, 'not configured', 'Не настроено на Этапе 5'],
       ['crawler', 'Crawler', 'ONLINE', 21, 'mock', 'Ожидает задания'],
-      ['indexer', 'Indexer', 'ONLINE', 16, 'mock', 'Очередь доступна'],
-      ['bm25', 'BM25 index', 'ONLINE', 9, 'v1', 'Индекс готов'],
-      ['vector', 'Vector index', 'ONLINE', 14, 'v1', 'Индекс готов'],
-      ['embedding', 'Embedding model', 'ONLINE', 27, 'bge-m3', 'Mock telemetry'],
-      ['reranker', 'Reranker', 'STARTING', 31, 'bge-reranker', 'Прогрев модели'],
+      ['indexer', 'Indexer', 'OFFLINE', 0, 'not configured', 'Появится на Этапе 6'],
+      ['bm25', 'BM25 index', 'OFFLINE', 0, 'not configured', 'Появится на Этапе 6'],
+      ['vector', 'Vector index', 'OFFLINE', 0, 'not configured', 'Появится на Этапе 6'],
+      ['embedding', 'Embedding model', 'OFFLINE', 0, 'not configured', 'Появится на Этапе 6'],
+      ['reranker', 'Reranker', 'OFFLINE', 0, 'not configured', 'Появится на Этапе 6'],
     ].map(([id, name, status, latencyMs, version, message]) => ({
       id: String(id),
       name: String(name),
@@ -1315,7 +1616,12 @@ function systemStatus(lastCheckAt = now()): SystemStatus {
       modelSizeGb: 6.4,
       dockerImagesEstimateGb: 4.1,
       documentsCount: 25_000,
+      answersCount: mockDocuments.reduce((sum, document) => sum + document.answers.length, 0),
       chunksCount: documents.reduce((sum, document) => sum + document.chunksCount, 0) + 82_000,
+      revisionsCount: documents.length,
+      failuresCount: mockIngestionFailures().length,
+      activeJobs: refreshJobs().filter((job) => ['QUEUED', 'RUNNING'].includes(job.status)).length,
+      lastIngestionAt: storedSources()[0]?.lastSyncAt,
       applicationVersion: '1.3.0-mock',
     },
     hardware: {
@@ -1491,21 +1797,30 @@ export const mockManagementRepository = {
   getEditorDashboard,
   getManagedDocuments,
   getManagedDocument,
+  getManagedDocumentChunks,
+  getManagedDocumentRevisions,
+  getManagedDocumentFailures,
   updateDocumentMetadata,
   hideDocument,
   restoreDocument,
   reindexDocument,
   bulkUpdateDocuments,
   getEditorJobs,
+  getEditorJobEvents,
   getAdminDashboard,
   getSources,
   getSource,
+  getSourceSyncState,
   updateSource,
   testSourceConnection,
   startSourceSync,
   stopSourceSync,
+  getIngestionStats,
+  getIngestionFailures,
+  getIngestionFailure,
   getAdminJobs,
   getAdminJob,
+  getAdminJobEvents,
   retryJob,
   cancelJob,
   startFullReindex,

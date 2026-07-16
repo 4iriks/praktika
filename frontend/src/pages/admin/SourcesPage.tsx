@@ -9,13 +9,15 @@ import {
   ErrorPanel,
   LoadingPanel,
   EmptyPanel,
+  MetricCard,
   PageHeading,
   ProgressBar,
   StatusBadge,
 } from '../../components/management/ManagementUi';
 import { ReasonDialog } from '../../components/management/ReasonDialog';
+import { SourceSyncDialog } from '../../components/management/SourceSyncDialog';
 import { Button } from '../../components/ui/Button';
-import type { Source, SourceUpdateRequest } from '../../types';
+import type { Source, SourceSyncRequest, SourceUpdateRequest, WorkerStatus } from '../../types';
 import { sourceFilters } from '../../utils/managementParams';
 
 export function SourcesPage() {
@@ -25,6 +27,14 @@ export function SourcesPage() {
     queryKey: queryKeys.admin.sources(filters),
     queryFn: ({ signal }) => api.getSources(filters, signal),
   });
+  const stats = useQuery({
+    queryKey: queryKeys.admin.ingestionStats,
+    queryFn: ({ signal }) => api.getIngestionStats(signal),
+  });
+  const system = useQuery({
+    queryKey: queryKeys.admin.systemStatus,
+    queryFn: ({ signal }) => api.getSystemStatus(signal),
+  });
   if (query.isPending) return <LoadingPanel label="Загружаем источники…" />;
   if (query.isError) return <ErrorPanel message={query.error.message} />;
   return (
@@ -32,14 +42,33 @@ export function SourcesPage() {
       <PageHeading
         eyebrow="DATA SOURCES"
         title="Источники данных"
-        description="Конфигурация синтетического Stack Exchange source и управление его mock-синхронизацией."
+        description="Настоящая durable ingestion-очередь Stack Exchange: checkpoint, квота, прогресс и безопасная отмена."
       />
+      {stats.data ? (
+        <section className="mb-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <MetricCard label="Документы" value={stats.data.documentsCount.toLocaleString('ru-RU')} />
+          <MetricCard label="Ответы" value={stats.data.answersCount.toLocaleString('ru-RU')} />
+          <MetricCard label="Чанки" value={stats.data.chunksCount.toLocaleString('ru-RU')} />
+          <MetricCard
+            label="Ошибки ingestion"
+            value={stats.data.unresolvedFailuresCount.toLocaleString('ru-RU')}
+          />
+        </section>
+      ) : null}
       {query.data.items.length === 0 ? (
         <EmptyPanel title="Источников нет" description="По заданным фильтрам ничего не найдено." />
       ) : (
         <div className="space-y-5">
           {query.data.items.map((source) => (
-            <SourceCard key={source.id} source={source} />
+            <SourceCard
+              key={source.id}
+              source={source}
+              workerStatus={
+                (system.data?.services.find((service) => service.id === 'crawler')?.status as
+                  | WorkerStatus
+                  | undefined) ?? 'OFFLINE'
+              }
+            />
           ))}
         </div>
       )}
@@ -47,7 +76,7 @@ export function SourcesPage() {
   );
 }
 
-function SourceCard({ source }: { source: Source }) {
+function SourceCard({ source, workerStatus }: { source: Source; workerStatus: WorkerStatus }) {
   const queryClient = useQueryClient();
   const [form, setForm] = useState<SourceUpdateRequest>({
     targetDocuments: source.targetDocuments,
@@ -56,6 +85,12 @@ function SourceCard({ source }: { source: Source }) {
     enabled: source.enabled,
   });
   const [stopOpen, setStopOpen] = useState(false);
+  const [syncOpen, setSyncOpen] = useState(false);
+  const syncState = useQuery({
+    queryKey: queryKeys.admin.sourceSyncState(source.id),
+    queryFn: ({ signal }) => api.getSourceSyncState(source.id, signal),
+    refetchInterval: source.status === 'SYNCING' ? 3_000 : false,
+  });
   useEffect(
     () =>
       setForm({
@@ -88,9 +123,10 @@ function SourceCard({ source }: { source: Source }) {
     onError: (error) => toast.error(error.message),
   });
   const sync = useMutation({
-    mutationFn: () => api.startSourceSync(source.id),
+    mutationFn: (request: SourceSyncRequest) => api.startSourceSync(source.id, request),
     onSuccess: async () => {
-      toast.success('Синхронизация запущена');
+      toast.success('Задание синхронизации создано');
+      setSyncOpen(false);
       await invalidate();
     },
     onError: (error) => toast.error(error.message),
@@ -104,7 +140,10 @@ function SourceCard({ source }: { source: Source }) {
     },
     onError: (error) => toast.error(error.message),
   });
-  const quota = Math.round((source.rateLimitRemaining / source.rateLimitTotal) * 100);
+  const quota = source.rateLimitTotal
+    ? Math.round((source.rateLimitRemaining / source.rateLimitTotal) * 100)
+    : 0;
+  const state = syncState.data;
   return (
     <article className="panel overflow-hidden">
       <div className="flex flex-col gap-4 border-b border-line p-5 sm:flex-row sm:items-start sm:justify-between">
@@ -133,10 +172,10 @@ function SourceCard({ source }: { source: Source }) {
               size="sm"
               loading={sync.isPending}
               disabled={!source.enabled}
-              onClick={() => sync.mutate()}
+              onClick={() => setSyncOpen(true)}
             >
               <Play className="size-4" />
-              Синхронизировать
+              Новая синхронизация
             </Button>
           )}
         </div>
@@ -198,13 +237,24 @@ function SourceCard({ source }: { source: Source }) {
             />
             <Meta
               label="API key"
-              value={source.apiKeyConfigured ? 'настроен' : 'не требуется в mock'}
+              value={source.apiKeyConfigured ? 'настроен через environment' : 'не настроен'}
             />
             <Meta label="Текущее задание" value={source.currentJobId ?? '—'} />
+            <Meta label="Worker" value={workerStatus} />
+            <Meta label="Режим" value={state?.currentMode ?? '—'} />
+            <Meta label="Следующая страница" value={String(state?.nextPage ?? '—')} />
+            <Meta
+              label="Checkpoint"
+              value={
+                state?.lastCheckpointAt
+                  ? new Date(state.lastCheckpointAt).toLocaleString('ru-RU')
+                  : '—'
+              }
+            />
           </dl>
           <div className="mt-4">
             <div className="mb-2 flex justify-between text-xs text-muted">
-              <span>Синтетическая квота</span>
+              <span>Квота Stack Exchange</span>
               <span>
                 {source.rateLimitRemaining} / {source.rateLimitTotal}
               </span>
@@ -219,6 +269,27 @@ function SourceCard({ source }: { source: Source }) {
               Открыть связанное задание
             </Link>
           ) : null}
+          {state ? (
+            <dl className="mt-4 grid grid-cols-2 gap-3 border-t border-line pt-4 text-xs">
+              <Meta label="Вопросов" value={state.totalQuestionsFetched.toLocaleString('ru-RU')} />
+              <Meta label="Ответов" value={state.totalAnswersFetched.toLocaleString('ru-RU')} />
+              <Meta
+                label="Добавлено"
+                value={state.totalDocumentsInserted.toLocaleString('ru-RU')}
+              />
+              <Meta label="Обновлено" value={state.totalDocumentsUpdated.toLocaleString('ru-RU')} />
+              <Meta
+                label="Без изменений"
+                value={state.totalDocumentsUnchanged.toLocaleString('ru-RU')}
+              />
+              <Meta label="Дубликаты" value={state.totalExactDuplicates.toLocaleString('ru-RU')} />
+              <Meta label="Пропущено" value={state.totalItemsSkipped.toLocaleString('ru-RU')} />
+              <Meta
+                label="Создано чанков"
+                value={state.totalChunksCreated.toLocaleString('ru-RU')}
+              />
+            </dl>
+          ) : null}
         </section>
       </div>
       <ReasonDialog
@@ -229,6 +300,12 @@ function SourceCard({ source }: { source: Source }) {
         loading={stop.isPending}
         onClose={() => setStopOpen(false)}
         onConfirm={() => stop.mutate()}
+      />
+      <SourceSyncDialog
+        open={syncOpen}
+        loading={sync.isPending}
+        onClose={() => !sync.isPending && setSyncOpen(false)}
+        onConfirm={(request) => sync.mutate(request)}
       />
     </article>
   );
