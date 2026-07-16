@@ -16,7 +16,8 @@ Python со Stack Overflow на русском. Репозиторий соде�
 - ingestion 5.1 — durable PostgreSQL queue, отдельный worker, checkpoint/events и типизированный
   Stack Exchange API client;
 - mock mode frontend сохранён и остаётся значением по умолчанию;
-- HTTP endpoints `/api/search` и `/api/ask` честно возвращают 501 до Этапа 6.
+- `/api/search` выполняет настоящий BM25/vector/hybrid retrieval через Qdrant; `/api/ask`
+  остаётся честным 501 до части 6.3.
 
 ## Быстрый запуск frontend
 
@@ -106,8 +107,11 @@ batch-запросами до 100 ID, соблюдает `has_more`, quota, back
 детерминированные chunks. ADMIN/EDITOR UI показывает реальный прогресс и состояние корпуса.
 
 Полный импорт 25 000 веток автоматически не запускается; см. [runbook](docs/ingestion-runbook.md).
-BM25, HNSW, embeddings, Qdrant, Ollama и RAG не имитируются через SQL. `/api/search` и
-`/api/ask` остаются честными 501 в HTTP mode до Этапа 6.
-# Этап 6.1
+Поиск не имитируется через SQL. Qdrant содержит dense HNSW и native sparse BM25, hybrid
+использует weighted RRF и локальный reranker. `/api/ask` остаётся 501 до части 6.3.
+# Этап 6.1–6.2
 
-Проект получил self-hosted Qdrant, dense embeddings через Ollama, native sparse BM25, отдельный durable indexer и blue-green переиндексацию. PostgreSQL остаётся source of truth; Qdrant можно восстановить. Поиск/RAG не объявлены готовыми: `/api/search` и `/api/ask` остаются 501 до 6.2/6.3.
+Проект получил self-hosted Qdrant, dense embeddings через Ollama, native sparse BM25,
+durable indexer и blue-green переиндексацию. HTTP mode поддерживает BM25, vector и hybrid
+поиск, weighted RRF, PostgreSQL visibility recheck и optional local reranker. RAG ещё не
+объявлен готовым: `/api/ask` остаётся 501 до 6.3.

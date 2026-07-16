@@ -19,7 +19,7 @@ class Settings(BaseSettings):
         default="development", alias="APP_ENV"
     )
     app_name: str = Field(default="PyAnswer API", alias="APP_NAME")
-    app_version: str = Field(default="0.6.0", alias="APP_VERSION")
+    app_version: str = Field(default="0.6.2", alias="APP_VERSION")
     debug: bool = Field(default=False, alias="DEBUG")
     database_url: str = Field(
         default="postgresql+asyncpg://pyanswer:pyanswer@localhost:5432/pyanswer",
@@ -194,6 +194,86 @@ class Settings(BaseSettings):
     )
     auto_enqueue_document_reindex: bool = Field(default=True, alias="AUTO_ENQUEUE_DOCUMENT_REINDEX")
 
+    search_bm25_candidates: int = Field(default=60, ge=1, le=1000, alias="SEARCH_BM25_CANDIDATES")
+    search_vector_candidates: int = Field(
+        default=60, ge=1, le=1000, alias="SEARCH_VECTOR_CANDIDATES"
+    )
+    search_hybrid_candidates: int = Field(
+        default=80, ge=1, le=1000, alias="SEARCH_HYBRID_CANDIDATES"
+    )
+    search_rrf_k: int = Field(default=60, ge=1, le=1000, alias="SEARCH_RRF_K")
+    search_bm25_weight: float = Field(default=1.0, gt=0, le=10, alias="SEARCH_BM25_WEIGHT")
+    search_vector_weight: float = Field(default=1.0, gt=0, le=10, alias="SEARCH_VECTOR_WEIGHT")
+    search_max_limit: int = Field(default=50, ge=1, le=100, alias="SEARCH_MAX_LIMIT")
+    search_max_candidates: int = Field(default=500, ge=10, le=5000, alias="SEARCH_MAX_CANDIDATES")
+    search_timeout_seconds: float = Field(default=30, gt=0, le=300, alias="SEARCH_TIMEOUT_SECONDS")
+    search_query_max_chars: int = Field(
+        default=1000, ge=10, le=10000, alias="SEARCH_QUERY_MAX_CHARS"
+    )
+    search_query_max_tokens: int = Field(
+        default=256, ge=4, le=2048, alias="SEARCH_QUERY_MAX_TOKENS"
+    )
+    search_max_chunks_per_document: int = Field(
+        default=2, ge=1, le=10, alias="SEARCH_MAX_CHUNKS_PER_DOCUMENT"
+    )
+    search_group_by_document: bool = Field(default=True, alias="SEARCH_GROUP_BY_DOCUMENT")
+    search_snippet_characters: int = Field(
+        default=500, ge=100, le=2000, alias="SEARCH_SNIPPET_CHARACTERS"
+    )
+    search_embedding_concurrency: int = Field(
+        default=2, ge=1, le=32, alias="SEARCH_EMBEDDING_CONCURRENCY"
+    )
+    search_embedding_queue_timeout_seconds: float = Field(
+        default=5, gt=0, le=60, alias="SEARCH_EMBEDDING_QUEUE_TIMEOUT_SECONDS"
+    )
+    search_embedding_cache_size: int = Field(
+        default=256, ge=0, le=10000, alias="SEARCH_EMBEDDING_CACHE_SIZE"
+    )
+    search_embedding_cache_ttl_seconds: int = Field(
+        default=900, ge=1, le=86400, alias="SEARCH_EMBEDDING_CACHE_TTL_SECONDS"
+    )
+    search_guest_rate_limit_requests: int = Field(
+        default=20, ge=1, le=10000, alias="SEARCH_GUEST_RATE_LIMIT_REQUESTS"
+    )
+    search_authenticated_rate_limit_requests: int = Field(
+        default=60, ge=1, le=10000, alias="SEARCH_AUTHENTICATED_RATE_LIMIT_REQUESTS"
+    )
+    search_rate_limit_window_seconds: int = Field(
+        default=60, ge=1, le=3600, alias="SEARCH_RATE_LIMIT_WINDOW_SECONDS"
+    )
+    search_runs_retention_days: int = Field(
+        default=90, ge=1, le=3650, alias="SEARCH_RUNS_RETENTION_DAYS"
+    )
+
+    reranker_base_url: str = Field(default="http://localhost:8001", alias="RERANKER_BASE_URL")
+    reranker_model: str = Field(default="Qwen/Qwen3-Reranker-0.6B", alias="RERANKER_MODEL")
+    reranker_model_revision: str = Field(
+        default="e1775d95f8cf4625eea7879c6edb34beae6c42af",
+        alias="RERANKER_MODEL_REVISION",
+    )
+    reranker_device: Literal["cpu", "cuda"] = Field(default="cpu", alias="RERANKER_DEVICE")
+    reranker_batch_size: int = Field(default=8, ge=1, le=128, alias="RERANKER_BATCH_SIZE")
+    reranker_max_length: int = Field(default=2048, ge=128, le=32768, alias="RERANKER_MAX_LENGTH")
+    reranker_timeout_seconds: float = Field(
+        default=60, gt=0, le=600, alias="RERANKER_TIMEOUT_SECONDS"
+    )
+    reranker_top_n: int = Field(default=30, ge=1, le=100, alias="RERANKER_TOP_N")
+    reranker_required: bool = Field(default=False, alias="RERANKER_REQUIRED")
+    reranker_instruction: str = Field(
+        default=(
+            "Given a Russian Python programming question, determine whether the passage "
+            "directly helps answer the question."
+        ),
+        alias="RERANKER_INSTRUCTION",
+    )
+    reranker_fusion_blend: float = Field(default=0.15, ge=0, le=0.5, alias="RERANKER_FUSION_BLEND")
+    reranker_max_concurrent_requests: int = Field(
+        default=1, ge=1, le=16, alias="RERANKER_MAX_CONCURRENT_REQUESTS"
+    )
+    reranker_queue_timeout_seconds: float = Field(
+        default=5, gt=0, le=60, alias="RERANKER_QUEUE_TIMEOUT_SECONDS"
+    )
+
     document_revision_limit: int = Field(default=10, ge=1, le=100, alias="DOCUMENT_REVISION_LIMIT")
     chunk_target_tokens: int = Field(default=650, ge=50, le=4000, alias="CHUNK_TARGET_TOKENS")
     chunk_max_tokens: int = Field(default=900, ge=100, le=6000, alias="CHUNK_MAX_TOKENS")
@@ -252,6 +332,17 @@ class Settings(BaseSettings):
             )
         if "{query}" not in self.embedding_query_instruction:
             raise ValueError("EMBEDDING_QUERY_INSTRUCTION должен содержать {query}")
+        if (
+            max(
+                self.search_bm25_candidates,
+                self.search_vector_candidates,
+                self.search_hybrid_candidates,
+            )
+            > self.search_max_candidates
+        ):
+            raise ValueError("Search candidate limit не может превышать SEARCH_MAX_CANDIDATES")
+        if self.reranker_top_n > self.search_max_candidates:
+            raise ValueError("RERANKER_TOP_N не может превышать SEARCH_MAX_CANDIDATES")
         return self
 
 

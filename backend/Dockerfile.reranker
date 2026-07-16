@@ -1,0 +1,29 @@
+FROM python:3.12-slim AS runtime
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    HF_HOME=/models/huggingface
+
+RUN groupadd --system pyanswer \
+    && useradd --system --gid pyanswer --home-dir /app pyanswer \
+    && mkdir -p /models/huggingface \
+    && chown -R pyanswer:pyanswer /models
+
+WORKDIR /app
+COPY pyproject.toml README.md ./
+COPY app ./app
+COPY alembic.ini ./alembic.ini
+COPY alembic ./alembic
+
+RUN python -m pip install --upgrade pip \
+    && python -m pip install --index-url https://download.pytorch.org/whl/cpu torch==2.6.0 \
+    && python -m pip install ".[reranker]" \
+    && chown -R pyanswer:pyanswer /app
+
+USER pyanswer
+EXPOSE 8001
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health/live', timeout=3)" || exit 1
+
+CMD ["uvicorn", "app.reranker:app", "--host", "0.0.0.0", "--port", "8001", "--timeout-graceful-shutdown", "20"]

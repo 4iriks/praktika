@@ -1,5 +1,10 @@
 # PyAnswer frontend
 
+При `VITE_USE_MOCKS=false` страница поиска использует настоящий FastAPI `/api/search` с режимами
+BM25, vector и hybrid, отменой через AbortSignal, nullable component scores, reranker fallback и
+index/timing diagnostics. При `VITE_USE_MOCKS=true` прежний полностью локальный demo остаётся без
+изменений. RAG в HTTP mode будет подключён в части 6.3.
+
 PyAnswer — локальная интеллектуальная поисковая система по синтетической русскоязычной базе
 вопросов и ответов о Python. Текущий frontend объединяет три законченных контура:
 

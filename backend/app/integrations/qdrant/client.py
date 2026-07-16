@@ -18,6 +18,8 @@ from app.integrations.qdrant.schema import (
     IndexPoint,
     IndexSchema,
 )
+from app.integrations.qdrant.sparse import SparseRepresentation
+from app.search.fusion import RetrievedCandidate
 
 T = TypeVar("T")
 
@@ -204,6 +206,50 @@ class QdrantIndexClient:
         )
         return len(response.points)
 
+    async def query_dense(
+        self,
+        collection_name: str,
+        vector: Sequence[float],
+        *,
+        query_filter: models.Filter,
+        limit: int,
+    ) -> list[RetrievedCandidate]:
+        response = await self._run(
+            lambda: self._client.query_points(
+                collection_name=collection_name,
+                query=list(vector),
+                using=DENSE_VECTOR_NAME,
+                query_filter=query_filter,
+                limit=limit,
+                with_payload=True,
+                with_vectors=False,
+                timeout=round(self._settings.search_timeout_seconds),
+            )
+        )
+        return _retrieved_candidates(response.points)
+
+    async def query_sparse(
+        self,
+        collection_name: str,
+        query: SparseRepresentation,
+        *,
+        query_filter: models.Filter,
+        limit: int,
+    ) -> list[RetrievedCandidate]:
+        response = await self._run(
+            lambda: self._client.query_points(
+                collection_name=collection_name,
+                query=query,
+                using=SPARSE_VECTOR_NAME,
+                query_filter=query_filter,
+                limit=limit,
+                with_payload=True,
+                with_vectors=False,
+                timeout=round(self._settings.search_timeout_seconds),
+            )
+        )
+        return _retrieved_candidates(response.points)
+
     async def alias_target(self, alias_name: str) -> str | None:
         response = await self._run(self._client.get_aliases)
         for item in response.aliases:
@@ -288,3 +334,22 @@ def _mapping_at(value: Mapping[str, object], *path: str) -> Mapping[str, object]
             return {}
         current = current.get(part)
     return current if isinstance(current, Mapping) else {}
+
+
+def _retrieved_candidates(points: Sequence[models.ScoredPoint]) -> list[RetrievedCandidate]:
+    candidates: list[RetrievedCandidate] = []
+    for point in points:
+        try:
+            point_id = point.id if isinstance(point.id, UUID) else UUID(str(point.id))
+        except ValueError as exc:
+            raise QdrantIndexError(
+                "QDRANT_RESPONSE_INVALID", "Qdrant вернул некорректный point ID"
+            ) from exc
+        candidates.append(
+            RetrievedCandidate(
+                point_id=point_id,
+                score=float(point.score),
+                payload=dict(point.payload or {}),
+            )
+        )
+    return candidates

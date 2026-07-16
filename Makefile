@@ -9,7 +9,8 @@ COMPOSE ?= $(shell if docker compose version >/dev/null 2>&1; then \
 .PHONY: backend-up backend-test backend-lint backend-migrate backend-seed backend-logs \
 	worker-up worker-logs worker-health sync-smoke sync-incremental ingestion-report \
 	sync-full-confirmed qdrant-up indexer-up index-logs index-status index-full \
-	models-pull embedding-model-pull
+	models-pull embedding-model-pull \
+	reranker-up reranker-logs reranker-model-pull search-evaluate
 
 backend-up:
 	$(COMPOSE) up -d postgres backend
@@ -68,6 +69,18 @@ index-full:
 
 models-pull embedding-model-pull:
 	$(COMPOSE) run --rm backend python -m app.scripts.pull_models --embedding-only
+
+reranker-up:
+	$(COMPOSE) up -d reranker
+
+reranker-logs:
+	$(COMPOSE) logs -f reranker
+
+reranker-model-pull:
+	$(COMPOSE) run --rm reranker python -m app.scripts.pull_reranker
+
+search-evaluate:
+	$(COMPOSE) run --rm backend python -m app.scripts.evaluate_retrieval
 
 sync-full-confirmed:
 	@test "$(CONFIRM_FULL_SYNC)" = "YES" || \

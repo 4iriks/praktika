@@ -170,4 +170,48 @@ describe('HTTP API security boundary', () => {
       expect.stringContaining('/editor/documents/document%2F1/failures'),
     ]);
   });
+
+  it('передаёт real search mode, AbortSignal и стабильный idempotency header при retry', async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(
+        jsonResponse(
+          { error: { code: 'SERVICE_UNAVAILABLE', message: 'Qdrant offline', details: {} } },
+          503,
+        ),
+      )
+      .mockResolvedValueOnce(jsonResponse({ results: [], pagination: {}, metrics: {} }));
+    const value = {
+      q: 'asyncio gather',
+      view: 'documents' as const,
+      mode: 'hybrid' as const,
+      page: 1,
+      pageSize: 10,
+      filters: {
+        tags: ['python'],
+        minScore: 2,
+        acceptedOnly: true,
+        hasCodeOnly: true,
+        sort: 'relevance' as const,
+      },
+    };
+    const controller = new AbortController();
+    await expect(httpApi.searchDocuments(value, controller.signal)).rejects.toMatchObject({
+      status: 503,
+    });
+    await httpApi.searchDocuments(value, controller.signal);
+
+    const first = fetchMock.mock.calls[0]?.[1];
+    const second = fetchMock.mock.calls[1]?.[1];
+    expect(fetchMock.mock.calls[0]?.[0]).toContain(
+      'mode=hybrid&page=1&page_size=10&sort=relevance&min_score=2&accepted=true&has_code=true&tags=python',
+    );
+    expect(first).toMatchObject({ credentials: 'include', signal: controller.signal });
+    const firstRequestId = (first?.headers as Record<string, string>)['X-Client-Request-ID'];
+    const secondRequestId = (second?.headers as Record<string, string>)['X-Client-Request-ID'];
+    expect(typeof firstRequestId).toBe('string');
+    expect(firstRequestId).toHaveLength(36);
+    expect(secondRequestId).toBe(firstRequestId);
+    expect(JSON.stringify(first?.headers)).not.toContain('Bearer');
+  });
 });

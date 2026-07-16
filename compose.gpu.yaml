@@ -7,3 +7,13 @@ services:
             - driver: nvidia
               count: 1
               capabilities: [gpu]
+  reranker:
+    environment:
+      RERANKER_DEVICE: cuda
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]

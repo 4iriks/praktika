@@ -112,8 +112,10 @@ export interface ScoreBreakdown {
   finalScore: number;
 }
 
-export interface SearchResult extends ScoreBreakdown {
+export interface SearchResult
+  extends Omit<ScoreBreakdown, 'bm25Score' | 'vectorScore' | 'rerankerScore'> {
   documentId: string;
+  chunkId?: string;
   title: string;
   snippet: string;
   tags: Tag[];
@@ -124,6 +126,26 @@ export interface SearchResult extends ScoreBreakdown {
   acceptedAnswer: boolean;
   hasCode: boolean;
   saved: boolean;
+  bm25Score: number | null;
+  vectorScore: number | null;
+  rerankerScore: number | null;
+  bm25Rank?: number | null;
+  vectorRank?: number | null;
+  fusionScore?: number;
+  rank?: number;
+  sectionType?: string;
+  matchedText?: string;
+  documentVersion?: number;
+  indexVersion?: string;
+  matchedChunks?: Array<{
+    chunkId: string;
+    sectionType: string;
+    snippet: string;
+    bm25Score: number | null;
+    vectorScore: number | null;
+    fusionScore: number;
+    rerankerScore: number | null;
+  }>;
 }
 
 export interface Pagination {
@@ -138,6 +160,20 @@ export interface SearchMetrics {
   candidates: number;
   reranked: number;
   queryTokens: number;
+  rerankerApplied?: boolean;
+  staleDiscarded?: number;
+  indexVersion?: string;
+  totalIsExact?: boolean;
+  hasMoreWithinCandidateWindow?: boolean;
+  timings?: {
+    totalMs: number;
+    embeddingMs: number;
+    bm25Ms: number;
+    vectorMs: number;
+    fusionMs: number;
+    rerankerMs: number;
+    postgresHydrationMs: number;
+  };
 }
 
 export interface SearchResponse {

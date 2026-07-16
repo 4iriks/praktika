@@ -148,14 +148,14 @@ function ScoreMetric({
   accent = false,
 }: {
   label: string;
-  value: number;
+  value: number | null;
   accent?: boolean;
 }) {
   return (
     <div>
       <p className="text-[10px] text-muted">{label}</p>
       <p className={cn('mt-1 font-mono text-xs text-ink', accent && 'text-info')}>
-        {formatScore(value)}
+        {value === null ? '—' : formatScore(value)}
       </p>
     </div>
   );

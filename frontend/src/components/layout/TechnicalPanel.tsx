@@ -86,6 +86,18 @@ export function TechnicalPanel({ request, searchResponse, askResponse }: Technic
             <Metric label="Время" value={formatDuration(searchResponse.metrics.tookMs)} />
             <Metric label="Кандидаты" value={String(searchResponse.metrics.candidates)} />
             <Metric label="Переранжировано" value={String(searchResponse.metrics.reranked)} />
+            <Metric
+              label="Reranker"
+              value={searchResponse.metrics.rerankerApplied === false ? 'FALLBACK' : 'APPLIED'}
+            />
+            <Metric
+              label="Index"
+              value={searchResponse.metrics.indexVersion?.slice(0, 12) ?? '—'}
+            />
+            <Metric
+              label="Stale отброшено"
+              value={String(searchResponse.metrics.staleDiscarded ?? 0)}
+            />
             <Metric label="Токены запроса" value={String(searchResponse.metrics.queryTokens)} />
           </div>
         </section>

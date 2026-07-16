@@ -226,9 +226,13 @@ claim, lease, heartbeat, checkpoint, cancellation и retry. Operational API и C
 `docs/stage5-ingestion.md` и `docs/ingestion-runbook.md`. Полный импорт 25 000 документов требует
 явного `CONFIRM_FULL_SYNC=YES` и автоматически не запускается.
 
-Qdrant, BM25, embeddings, HNSW, reranker, Ollama и RAG не настроены. `/api/search` и `/api/ask`
-не подменяют будущий движок SQL-поиском и продолжают возвращать 501. Frontend mock mode остаётся
+RAG ещё не настроен и `/api/ask` честно возвращает 501. Frontend mock mode остаётся
 демонстрационным режимом по умолчанию.
-# Stage 6.1
 
-Добавлены Qdrant 1.18.2, Ollama embeddings, отдельный indexer, versioned collections и blue-green alias switch. Команды: `make qdrant-up`, `make embedding-model-pull`, `make indexer-up`. Модель и полный rebuild не запускаются автоматически; `/api/search` и `/api/ask` пока 501.
+## Stage 6.1–6.2
+
+Добавлены Qdrant 1.18.2, Ollama embeddings, отдельный indexer, versioned collections и
+blue-green alias switch. `/api/search` выполняет реальный BM25/vector/hybrid retrieval,
+weighted RRF и optional local reranking. PostgreSQL повторно проверяет visibility/version перед
+выдачей. Команды: `make qdrant-up`, `make embedding-model-pull`, `make indexer-up`,
+`make reranker-model-pull`, `make reranker-up`, `make search-evaluate`.

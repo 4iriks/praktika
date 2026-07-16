@@ -151,8 +151,13 @@ erDiagram
   JOBS ||--o| SEARCH_INDEX_VERSIONS : builds
   USERS ||--o{ SEARCH_INDEX_VERSIONS : creates
   SEARCH_INDEX_VERSIONS ||--o{ SEARCH_INDEX_ENTRIES : contains
+  SEARCH_INDEX_VERSIONS ||--o{ SEARCH_RUNS : served_by
+  USERS ||--o{ SEARCH_RUNS : executes
   DOCUMENT_CHUNKS ||--o{ SEARCH_INDEX_ENTRIES : indexed_as
   DOCUMENTS ||--o{ SEARCH_INDEX_ENTRIES : groups
 ```
 
-`search_index_versions` хранит version/config/status физической Qdrant collection. `search_index_entries` — идемпотентное соответствие PostgreSQL chunk → Qdrant point; vectors в PostgreSQL не дублируются.
+`search_index_versions` хранит version/config/status физической Qdrant collection.
+`search_index_entries` — идемпотентное соответствие PostgreSQL chunk → Qdrant point; vectors в
+PostgreSQL не дублируются. `search_runs` хранит безопасную telemetry поиска и связанную version;
+`search_history.request_id` обеспечивает идемпотентность browser retry.

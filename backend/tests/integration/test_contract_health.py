@@ -48,10 +48,12 @@ async def test_ready_returns_503_when_database_is_unavailable(client: AsyncClien
     assert response.json()["error"]["code"] == "SERVICE_UNAVAILABLE"
 
 
-async def test_search_and_rag_are_honest_501_placeholders(client: AsyncClient) -> None:
+async def test_search_requires_active_index_while_rag_remains_honest_501(
+    client: AsyncClient,
+) -> None:
     search = await client.get("/api/search", params={"q": "asyncio"})
-    assert search.status_code == 501
-    assert search.json()["error"]["code"] == "SEARCH_ENGINE_NOT_READY"
+    assert search.status_code == 503
+    assert search.json()["error"]["code"] == "SERVICE_UNAVAILABLE"
 
     token = await csrf(client)
     ask = await client.post(

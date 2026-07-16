@@ -156,6 +156,7 @@ class SearchHistory(Base, UUIDPrimaryKeyMixin):
     __tablename__ = "search_history"
 
     user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    request_id: Mapped[str | None] = mapped_column(String(80), unique=True, index=True)
     query: Mapped[str] = mapped_column(String(1000))
     view: Mapped[str] = mapped_column(String(16))
     mode: Mapped[str] = mapped_column(String(16))

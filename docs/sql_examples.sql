@@ -162,3 +162,15 @@ SELECT instance_id, status, current_job_id, heartbeat_at,
 FROM worker_instances
 ORDER BY heartbeat_at DESC, id
 LIMIT 20;
+
+-- 21. Latency и fallback rate поиска по режимам за последние сутки.
+SELECT mode,
+       COUNT(*) AS runs,
+       ROUND(AVG(total_ms), 1) AS avg_total_ms,
+       percentile_cont(0.95) WITHIN GROUP (ORDER BY total_ms) AS p95_total_ms,
+       ROUND(100.0 * COUNT(*) FILTER (WHERE NOT reranker_applied) / NULLIF(COUNT(*), 0), 2)
+         AS reranker_fallback_percent
+FROM search_runs
+WHERE created_at >= now() - interval '1 day' AND status = 'COMPLETED'
+GROUP BY mode
+ORDER BY mode;

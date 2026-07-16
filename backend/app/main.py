@@ -31,7 +31,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         version=config.app_version,
         description=(
             "Серверный API PyAnswer. Cookie-auth endpoints требуют CSRF для unsafe methods. "
-            "Search/RAG будут подключены на Этапе 6."
+            "BM25, dense и hybrid search работают через активный Qdrant alias; RAG появится в 6.3."
         ),
         docs_url=docs_url,
         openapi_url=openapi_url,
@@ -43,7 +43,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_origins=config.frontend_origins,
         allow_credentials=True,
         allow_methods=["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
-        allow_headers=["Accept", "Content-Type", "X-CSRF-Token", "X-Request-ID"],
+        allow_headers=[
+            "Accept",
+            "Content-Type",
+            "X-CSRF-Token",
+            "X-Request-ID",
+            "X-Client-Request-ID",
+        ],
         expose_headers=["X-Request-ID"],
     )
     app.add_middleware(CSRFMiddleware, settings=config)

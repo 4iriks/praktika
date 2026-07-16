@@ -493,6 +493,54 @@ class SearchIndexEntry(Base, UUIDPrimaryKeyMixin):
     )
 
 
+class SearchRun(Base, UUIDPrimaryKeyMixin):
+    __tablename__ = "search_runs"
+
+    request_id: Mapped[str] = mapped_column(String(80), unique=True, index=True)
+    user_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), index=True
+    )
+    query: Mapped[str] = mapped_column(String(1000))
+    query_hash: Mapped[str] = mapped_column(String(64), index=True)
+    mode: Mapped[str] = mapped_column(String(16), index=True)
+    filters: Mapped[dict[str, object]] = mapped_column(JSONB, default=dict)
+    requested_limit: Mapped[int] = mapped_column(Integer)
+    candidate_count: Mapped[int] = mapped_column(Integer, default=0)
+    result_count: Mapped[int] = mapped_column(Integer, default=0)
+    reranker_applied: Mapped[bool] = mapped_column(Boolean, default=False)
+    index_version_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("search_index_versions.id", ondelete="SET NULL"), index=True
+    )
+    total_ms: Mapped[int] = mapped_column(Integer, default=0)
+    embedding_ms: Mapped[int] = mapped_column(Integer, default=0)
+    bm25_ms: Mapped[int] = mapped_column(Integer, default=0)
+    vector_ms: Mapped[int] = mapped_column(Integer, default=0)
+    fusion_ms: Mapped[int] = mapped_column(Integer, default=0)
+    reranker_ms: Mapped[int] = mapped_column(Integer, default=0)
+    postgres_hydration_ms: Mapped[int] = mapped_column(Integer, default=0)
+    status: Mapped[str] = mapped_column(String(16), index=True)
+    error_code: Mapped[str | None] = mapped_column(String(80))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), index=True
+    )
+
+    __table_args__ = (
+        CheckConstraint("mode IN ('bm25','vector','hybrid')", name="search_run_mode_values"),
+        CheckConstraint("status IN ('COMPLETED','FAILED')", name="search_run_status_values"),
+        CheckConstraint("requested_limit BETWEEN 1 AND 100", name="search_run_limit_range"),
+        CheckConstraint(
+            "candidate_count >= 0 AND result_count >= 0",
+            name="search_run_counts_non_negative",
+        ),
+        CheckConstraint(
+            "total_ms >= 0 AND embedding_ms >= 0 AND bm25_ms >= 0 "
+            "AND vector_ms >= 0 AND fusion_ms >= 0 AND reranker_ms >= 0 "
+            "AND postgres_hydration_ms >= 0",
+            name="search_run_timings_non_negative",
+        ),
+    )
+
+
 class AuditEvent(Base, UUIDPrimaryKeyMixin):
     __tablename__ = "audit_events"
 

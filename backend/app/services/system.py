@@ -27,6 +27,7 @@ from app.db.models.operations import (
 )
 from app.integrations.embeddings import OllamaEmbeddingProvider
 from app.integrations.qdrant import QdrantIndexClient
+from app.integrations.reranker import RerankerClient
 from app.schemas.content import PublicAccessPolicyOut
 from app.schemas.management import (
     SystemHardwareOut,
@@ -193,12 +194,15 @@ async def system_status(db: AsyncSession) -> SystemStatusOut:
     )
     qdrant_client = QdrantIndexClient(config)
     embedding_provider = OllamaEmbeddingProvider(config)
+    reranker_client = RerankerClient(config)
     try:
         qdrant_health = await qdrant_client.health()
         embedding_health = await embedding_provider.health()
+        reranker_health = await reranker_client.health()
     finally:
         await qdrant_client.close()
         await embedding_provider.close()
+        await reranker_client.close()
     services.extend(
         [
             SystemServiceOut(
@@ -287,11 +291,17 @@ async def system_status(db: AsyncSession) -> SystemStatusOut:
             SystemServiceOut(
                 id="reranker",
                 name="Reranker",
-                status="OFFLINE",
+                status=(
+                    "ONLINE"
+                    if reranker_health.online and reranker_health.model_ready
+                    else "DEGRADED"
+                    if reranker_health.online
+                    else "OFFLINE"
+                ),
                 latency_ms=0,
-                version="not configured",
+                version=config.reranker_model,
                 last_check_at=now,
-                message="Будет подключён в части 6.2",
+                message=reranker_health.message,
             ),
         ]
     )

@@ -1,0 +1,30 @@
+{"id":"dev-01","query":"как удалить дубликаты из списка сохранив порядок","relevantExternalIds":["stage4-1001"],"tags":["lists"],"split":"development","notes":"identity-preserving list dedup"}
+{"id":"dev-02","query":"объединить два dict оператором pipe","relevantExternalIds":["stage4-1002"],"tags":["dict"],"split":"development","notes":"dictionary merge"}
+{"id":"dev-03","query":"await asyncio.gather несколько корутин","relevantExternalIds":["stage4-1003"],"tags":["asyncio"],"split":"development","notes":"exact identifier"}
+{"id":"dev-04","query":"чем create_task отличается от gather","relevantExternalIds":["stage4-1004"],"tags":["asyncio"],"split":"development","notes":"async semantic"}
+{"id":"dev-05","query":"pandas читать огромный csv частями chunksize","relevantExternalIds":["stage4-1005"],"tags":["pandas"],"split":"development","notes":"pandas chunks"}
+{"id":"dev-06","query":"Django убрать N+1 в QuerySet select_related","relevantExternalIds":["stage4-1006"],"tags":["django"],"split":"development","notes":"ORM optimization"}
+{"id":"dev-07","query":"Flask получить JSON request.get_json","relevantExternalIds":["stage4-1007"],"tags":["flask"],"split":"development","notes":"Flask JSON"}
+{"id":"dev-08","query":"FastAPI dependency injection Depends","relevantExternalIds":["stage4-1008"],"tags":["fastapi"],"split":"development","notes":"DI exact"}
+{"id":"dev-09","query":"Selenium дождаться элемента WebDriverWait","relevantExternalIds":["stage4-1009"],"tags":["selenium"],"split":"development","notes":"wait"}
+{"id":"dev-10","query":"NumPy умножить весь массив без цикла","relevantExternalIds":["stage4-1010"],"tags":["numpy"],"split":"development","notes":"vectorization"}
+{"id":"dev-11","query":"requests timeout retry HTTP запрос","relevantExternalIds":["stage4-1011"],"tags":["requests"],"split":"development","notes":"HTTP resilience"}
+{"id":"dev-12","query":"Python classmethod staticmethod различия","relevantExternalIds":["stage4-1012"],"tags":["classes"],"split":"development","notes":"methods"}
+{"id":"dev-13","query":"декоратор принимающий аргументы wraps","relevantExternalIds":["stage4-1013"],"tags":["decorators"],"split":"development","notes":"decorator"}
+{"id":"dev-14","query":"создать собственное исключение DomainError","relevantExternalIds":["stage4-1014"],"tags":["exceptions"],"split":"development","notes":"exceptions"}
+{"id":"dev-15","query":"ModuleNotFoundError запуск python -m","relevantExternalIds":["stage4-1015"],"tags":["imports"],"split":"development","notes":"imports exact"}
+{"id":"val-01","query":"как убрать повторяющиеся элементы Python list","relevantExternalIds":["stage4-1001"],"tags":["lists"],"split":"validation","notes":"semantic list dedup"}
+{"id":"val-02","query":"слить отображения first и second в Python 3.9","relevantExternalIds":["stage4-1002"],"tags":["dict"],"split":"validation","notes":"dictionary paraphrase"}
+{"id":"val-03","query":"параллельно дождаться группы async задач","relevantExternalIds":["stage4-1003","stage4-1004"],"tags":["asyncio"],"split":"validation","notes":"multi relevant async"}
+{"id":"val-04","query":"обрабатывать CSV не загружая целиком в память","relevantExternalIds":["stage4-1005"],"tags":["pandas"],"split":"validation","notes":"semantic pandas"}
+{"id":"val-05","query":"ускорить связи author в Django ORM","relevantExternalIds":["stage4-1006"],"tags":["django"],"split":"validation","notes":"semantic ORM"}
+{"id":"val-06","query":"внедрение зависимости сервиса в endpoint FastAPI","relevantExternalIds":["stage4-1008"],"tags":["fastapi"],"split":"validation","notes":"DI paraphrase"}
+{"id":"val-07","query":"ожидание DOM элемента webdriver Python","relevantExternalIds":["stage4-1009"],"tags":["selenium"],"split":"validation","notes":"selenium semantic"}
+{"id":"val-08","query":"векторные операции вместо for для ndarray","relevantExternalIds":["stage4-1010"],"tags":["numpy"],"split":"validation","notes":"numpy semantic"}
+{"id":"val-09","query":"requests.get зависает как поставить ограничение времени","relevantExternalIds":["stage4-1011"],"tags":["requests"],"split":"validation","notes":"timeout paraphrase"}
+{"id":"val-10","query":"виртуальное окружение venv создать и активировать","relevantExternalIds":["stage4-1016"],"tags":["venv"],"split":"validation","notes":"venv"}
+{"id":"val-11","query":"SQLAlchemy AsyncSession transaction async with begin","relevantExternalIds":["stage4-1017"],"tags":["sqlalchemy"],"split":"validation","notes":"async database"}
+{"id":"val-12","query":"pytest parametrization несколько наборов аргументов","relevantExternalIds":["stage4-1018"],"tags":["pytest"],"split":"validation","notes":"pytest"}
+{"id":"val-13","query":"with open автоматическое закрытие файла","relevantExternalIds":["stage4-1019"],"tags":["python"],"split":"validation","notes":"context manager"}
+{"id":"val-14","query":"Python match case структурное сопоставление","relevantExternalIds":["stage4-1020"],"tags":["python"],"split":"validation","notes":"pattern matching"}
+{"id":"val-15","query":"почему пакет не находится при запуске модуля","relevantExternalIds":["stage4-1015"],"tags":["imports"],"split":"validation","notes":"ModuleNotFoundError semantic"}

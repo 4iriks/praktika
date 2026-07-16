@@ -2,6 +2,15 @@
 
 Base URL: `/api`. JSON fields используют camelCase, Python и PostgreSQL — snake_case.
 
+## Search 6.2
+
+`GET /api/search` поддерживает `bm25`, `vector` и `hybrid`. Raw BM25/cosine scores возвращаются
+раздельно; hybrid объединяет ranks через weighted RRF. Отсутствующий component или fallback
+reranker обозначается `null`. Ответ содержит matched chunks, index version, timings и
+`totalIsExact=false`, потому что pagination ограничена candidate window. Недоступность
+Qdrant/model/обязательного reranker возвращает 503 в общем error envelope. `/api/ask` остаётся
+501 до 6.3.
+
 Подэтапы 5.1–5.2 расширяют существующий контракт operational-полями worker и ingestion. Старые
 auth/user/editor/admin методы сохраняют обратную совместимость.
 

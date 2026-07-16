@@ -101,6 +101,7 @@ const apiErrorCodes = new Set([
 ]);
 let csrfToken: string | null = null;
 const unauthorizedListeners = new Set<() => void>();
+const pendingSearchRequestIds = new Map<string, string>();
 
 export function subscribeToUnauthorized(listener: () => void): () => void {
   unauthorizedListeners.add(listener);
@@ -188,6 +189,7 @@ async function request<T>(path: string, init: RequestInit = {}, csrfRetried = fa
 export function resetHttpSecurityStateForTests(): void {
   csrfToken = null;
   unauthorizedListeners.clear();
+  pendingSearchRequestIds.clear();
 }
 
 function searchQuery(value: SearchRequest): string {
@@ -319,8 +321,20 @@ function ingestionFailuresQuery(filters: IngestionFailureFilters): string {
 }
 
 export const httpApi: ApiClient = {
-  searchDocuments(value, signal) {
-    return request<SearchResponse>('/search?' + searchQuery(value), { signal });
+  async searchDocuments(value, signal) {
+    const query = searchQuery(value);
+    let clientRequestId = pendingSearchRequestIds.get(query);
+    if (!clientRequestId) {
+      clientRequestId = globalThis.crypto.randomUUID();
+      if (pendingSearchRequestIds.size >= 100) pendingSearchRequestIds.clear();
+      pendingSearchRequestIds.set(query, clientRequestId);
+    }
+    const response = await request<SearchResponse>('/search?' + query, {
+      signal,
+      headers: { 'X-Client-Request-ID': clientRequestId },
+    });
+    pendingSearchRequestIds.delete(query);
+    return response;
   },
   async askQuestion(value: AskRequest, options = {}) {
     const response = await request<AskResponse>('/ask', {

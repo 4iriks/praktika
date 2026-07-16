@@ -51,9 +51,21 @@ x-search-environment: &search-environment
   INDEX_RETAIN_RETIRED_COUNT: ${INDEX_RETAIN_RETIRED_COUNT:-1}
   INDEX_AUTO_CLEANUP: ${INDEX_AUTO_CLEANUP:-false}
   AUTO_ENQUEUE_DOCUMENT_REINDEX: ${AUTO_ENQUEUE_DOCUMENT_REINDEX:-true}
+  SEARCH_BM25_CANDIDATES: ${SEARCH_BM25_CANDIDATES:-60}
+  SEARCH_VECTOR_CANDIDATES: ${SEARCH_VECTOR_CANDIDATES:-60}
+  SEARCH_HYBRID_CANDIDATES: ${SEARCH_HYBRID_CANDIDATES:-80}
+  SEARCH_RRF_K: ${SEARCH_RRF_K:-60}
+  SEARCH_BM25_WEIGHT: ${SEARCH_BM25_WEIGHT:-1}
+  SEARCH_VECTOR_WEIGHT: ${SEARCH_VECTOR_WEIGHT:-1}
+  SEARCH_MAX_LIMIT: ${SEARCH_MAX_LIMIT:-50}
+  SEARCH_MAX_CANDIDATES: ${SEARCH_MAX_CANDIDATES:-500}
+  RERANKER_BASE_URL: ${RERANKER_BASE_URL:-http://reranker:8001}
+  RERANKER_MODEL: ${RERANKER_MODEL:-Qwen/Qwen3-Reranker-0.6B}
+  RERANKER_MODEL_REVISION: ${RERANKER_MODEL_REVISION:-e1775d95f8cf4625eea7879c6edb34beae6c42af}
+  RERANKER_REQUIRED: ${RERANKER_REQUIRED:-false}
 
 x-backend-image: &backend-image
-  image: pyanswer-backend:${APP_VERSION:-0.6.0}
+  image: pyanswer-backend:${APP_VERSION:-0.6.2}
   build:
     context: ./backend
     dockerfile: Dockerfile
@@ -116,7 +128,7 @@ services:
       <<: [*ingestion-environment, *search-environment]
       APP_ENV: ${APP_ENV:-development}
       APP_NAME: ${APP_NAME:-PyAnswer API}
-      APP_VERSION: ${APP_VERSION:-0.6.0}
+      APP_VERSION: ${APP_VERSION:-0.6.2}
       DEBUG: ${DEBUG:-false}
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-pyanswer}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-pyanswer}
       FRONTEND_ORIGINS: ${FRONTEND_ORIGINS:-["http://localhost:5173"]}
@@ -161,7 +173,7 @@ services:
       <<: *ingestion-environment
       APP_ENV: ${APP_ENV:-development}
       APP_NAME: ${APP_NAME:-PyAnswer Worker}
-      APP_VERSION: ${APP_VERSION:-0.6.0}
+      APP_VERSION: ${APP_VERSION:-0.6.2}
       DEBUG: ${DEBUG:-false}
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-pyanswer}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-pyanswer}
       FRONTEND_ORIGINS: ${FRONTEND_ORIGINS:-["http://localhost:5173"]}
@@ -182,7 +194,7 @@ services:
       <<: [*ingestion-environment, *search-environment]
       APP_ENV: ${APP_ENV:-development}
       APP_NAME: ${APP_NAME:-PyAnswer Indexer}
-      APP_VERSION: ${APP_VERSION:-0.6.0}
+      APP_VERSION: ${APP_VERSION:-0.6.2}
       DEBUG: ${DEBUG:-false}
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-pyanswer}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-pyanswer}
       FRONTEND_ORIGINS: ${FRONTEND_ORIGINS:-["http://localhost:5173"]}
@@ -197,7 +209,33 @@ services:
       ollama:
         condition: service_healthy
 
+  reranker:
+    image: pyanswer-reranker:${APP_VERSION:-0.6.2}
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.reranker
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 25s
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      APP_VERSION: ${APP_VERSION:-0.6.2}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-pyanswer}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-pyanswer}
+      FRONTEND_ORIGINS: ${FRONTEND_ORIGINS:-["http://localhost:5173"]}
+      RERANKER_MODEL: ${RERANKER_MODEL:-Qwen/Qwen3-Reranker-0.6B}
+      RERANKER_MODEL_REVISION: ${RERANKER_MODEL_REVISION:-e1775d95f8cf4625eea7879c6edb34beae6c42af}
+      RERANKER_DEVICE: ${RERANKER_DEVICE:-cpu}
+      RERANKER_BATCH_SIZE: ${RERANKER_BATCH_SIZE:-8}
+      RERANKER_MAX_LENGTH: ${RERANKER_MAX_LENGTH:-2048}
+      HF_HOME: /models/huggingface
+    volumes:
+      - reranker_models:/models/huggingface
+    depends_on:
+      postgres:
+        condition: service_healthy
+
 volumes:
   postgres_data:
   qdrant_data:
   ollama_models:
+  reranker_models:

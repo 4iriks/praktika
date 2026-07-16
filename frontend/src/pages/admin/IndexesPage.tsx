@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { DatabaseZap, ShieldCheck, Trash2 } from 'lucide-react';
+import { DatabaseZap, Search, ShieldCheck, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../../api';
 import { queryKeys } from '../../api/queryKeys';
@@ -13,11 +13,15 @@ import {
 } from '../../components/management/ManagementUi';
 import { Button } from '../../components/ui/Button';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
+import type { SearchMode, SearchResponse } from '../../types';
 
 export function IndexesPage() {
   const queryClient = useQueryClient();
   const [fullConfirm, setFullConfirm] = useState(false);
   const [cleanupConfirm, setCleanupConfirm] = useState(false);
+  const [diagnosticQuery, setDiagnosticQuery] = useState('asyncio gather');
+  const [diagnosticMode, setDiagnosticMode] = useState<SearchMode>('hybrid');
+  const [diagnosticResult, setDiagnosticResult] = useState<SearchResponse>();
   const stats = useQuery({
     queryKey: queryKeys.admin.indexStats,
     queryFn: ({ signal }) => api.getSearchIndexStats(signal),
@@ -52,6 +56,25 @@ export function IndexesPage() {
       toast.success(confirmed ? 'Очистка поставлена в очередь' : 'Dry-run поставлен в очередь');
       await refresh();
     },
+    onError: (error) => toast.error(error.message),
+  });
+  const diagnose = useMutation({
+    mutationFn: () =>
+      api.searchDocuments({
+        q: diagnosticQuery,
+        view: 'documents',
+        mode: diagnosticMode,
+        page: 1,
+        pageSize: 5,
+        filters: {
+          tags: [],
+          minScore: 0,
+          acceptedOnly: false,
+          hasCodeOnly: false,
+          sort: 'relevance',
+        },
+      }),
+    onSuccess: setDiagnosticResult,
     onError: (error) => toast.error(error.message),
   });
 
@@ -141,6 +164,55 @@ export function IndexesPage() {
             ))}
           </tbody>
         </table>
+      </section>
+      <section className="panel mt-6 p-5">
+        <h2 className="text-base font-semibold text-ink">Search diagnostics</h2>
+        <p className="mt-1 text-xs text-muted">
+          Реальный запрос к active alias с component scores и фактическими timings.
+        </p>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <input
+            className="min-w-64 flex-1 rounded-lg border border-line bg-elevated px-3 py-2 text-sm text-ink"
+            value={diagnosticQuery}
+            onChange={(event) => setDiagnosticQuery(event.target.value)}
+            aria-label="Диагностический запрос"
+          />
+          <select
+            className="rounded-lg border border-line bg-elevated px-3 py-2 text-sm text-ink"
+            value={diagnosticMode}
+            onChange={(event) => setDiagnosticMode(event.target.value as SearchMode)}
+            aria-label="Режим диагностики"
+          >
+            <option value="bm25">BM25</option>
+            <option value="vector">Vector</option>
+            <option value="hybrid">Hybrid</option>
+          </select>
+          <Button
+            onClick={() => diagnose.mutate()}
+            loading={diagnose.isPending}
+            disabled={!diagnosticQuery.trim()}
+          >
+            <Search className="size-4" /> Выполнить
+          </Button>
+        </div>
+        {diagnosticResult ? (
+          <div className="mt-4 space-y-2">
+            <p className="font-mono text-xs text-muted">
+              {diagnosticResult.metrics.tookMs} ms · {diagnosticResult.metrics.candidates}{' '}
+              candidates · reranker{' '}
+              {diagnosticResult.metrics.rerankerApplied === false ? 'fallback' : 'applied'}
+            </p>
+            {diagnosticResult.results.map((result) => (
+              <div key={result.documentId} className="rounded-lg border border-line p-3 text-xs">
+                <p className="font-medium text-ink">{result.title}</p>
+                <p className="mt-1 font-mono text-muted">
+                  BM25 {result.bm25Score ?? '—'} · vector {result.vectorScore ?? '—'} · fusion{' '}
+                  {result.fusionScore ?? '—'} · reranker {result.rerankerScore ?? '—'}
+                </p>
+              </div>
+            ))}
+          </div>
+        ) : null}
       </section>
       <Button className="mt-4" variant="danger" onClick={() => setCleanupConfirm(true)}>
         Очистить устаревшие collections
