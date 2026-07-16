@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import platform
+import shutil
 import time
 from datetime import timedelta
+from pathlib import Path
 
 from fastapi import Request
 from sqlalchemy import func, select, text
@@ -128,6 +131,7 @@ async def system_status(db: AsyncSession) -> SystemStatusOut:
         select(func.max(Job.updated_at)).where(Job.type == JobType.SOURCE_SYNC)
     )
     database_bytes = await db.scalar(select(func.pg_database_size(func.current_database()))) or 0
+    ram_usage, disk_usage, operating_system, cpu_name, ram_total = _local_resources()
     services = [
         SystemServiceOut(
             id="frontend",
@@ -323,14 +327,14 @@ async def system_status(db: AsyncSession) -> SystemStatusOut:
     return SystemStatusOut(
         services=services,
         metrics=SystemMetricsOut(
-            cpu_usage=0,
-            ram_usage_gb=0,
-            vram_usage_gb=0,
-            disk_usage_gb=0,
+            cpu_usage=None,
+            ram_usage_gb=ram_usage,
+            vram_usage_gb=None,
+            disk_usage_gb=disk_usage,
             database_size_gb=round(database_bytes / 1024**3, 4),
-            vector_index_size_gb=0,
-            model_size_gb=0,
-            docker_images_estimate_gb=0,
+            vector_index_size_gb=None,
+            model_size_gb=None,
+            docker_images_estimate_gb=None,
             documents_count=documents,
             answers_count=answers,
             chunks_count=chunks,
@@ -341,15 +345,42 @@ async def system_status(db: AsyncSession) -> SystemStatusOut:
             application_version=config.app_version,
         ),
         hardware=SystemHardwareOut(
-            operating_system="Не определяется из браузера",
-            cpu="Не настроено",
-            ram_gb=0,
-            gpu="Не настроено",
-            vram_gb=0,
-            project_disk_limit_gb=35,
+            operating_system=operating_system,
+            cpu=cpu_name,
+            ram_gb=ram_total,
+            gpu="UNKNOWN",
+            vram_gb=None,
+            project_disk_limit_gb=config.project_disk_limit_gb,
         ),
         last_check_at=now,
     )
+
+
+def _local_resources() -> tuple[float | None, float, str, str, int | None]:
+    ram_usage: float | None = None
+    status = Path("/proc/self/status")
+    if status.exists():
+        for line in status.read_text(encoding="utf-8").splitlines():
+            if line.startswith("VmRSS:"):
+                ram_usage = round(int(line.split()[1]) / 1024**2, 3)
+                break
+    disk = shutil.disk_usage("/")
+    disk_usage = round((disk.total - disk.free) / 1024**3, 3)
+    cpu_name = platform.processor() or "UNKNOWN"
+    cpuinfo = Path("/proc/cpuinfo")
+    if cpuinfo.exists():
+        for line in cpuinfo.read_text(encoding="utf-8", errors="replace").splitlines():
+            if line.startswith("model name"):
+                cpu_name = line.split(":", 1)[1].strip()
+                break
+    ram_total: int | None = None
+    meminfo = Path("/proc/meminfo")
+    if meminfo.exists():
+        for line in meminfo.read_text(encoding="utf-8").splitlines():
+            if line.startswith("MemTotal:"):
+                ram_total = round(int(line.split()[1]) / 1024**2)
+                break
+    return ram_usage, disk_usage, platform.platform(), cpu_name, ram_total
 
 
 async def run_health_check(db: AsyncSession, request: Request, actor: User) -> SystemStatusOut:

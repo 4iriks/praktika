@@ -1024,14 +1024,14 @@ export interface SystemService {
 }
 
 export interface SystemMetrics {
-  cpuUsage: number;
-  ramUsageGb: number;
-  vramUsageGb: number;
+  cpuUsage: number | null;
+  ramUsageGb: number | null;
+  vramUsageGb: number | null;
   diskUsageGb: number;
   databaseSizeGb: number;
-  vectorIndexSizeGb: number;
-  modelSizeGb: number;
-  dockerImagesEstimateGb: number;
+  vectorIndexSizeGb: number | null;
+  modelSizeGb: number | null;
+  dockerImagesEstimateGb: number | null;
   documentsCount: number;
   answersCount: number;
   chunksCount: number;
@@ -1047,9 +1047,9 @@ export type WorkerStatus = Extract<SystemServiceStatus, 'ONLINE' | 'DEGRADED' | 
 export interface SystemHardware {
   operatingSystem: string;
   cpu: string;
-  ramGb: number;
+  ramGb: number | null;
   gpu: string;
-  vramGb: number;
+  vramGb: number | null;
   projectDiskLimitGb: number;
 }
 

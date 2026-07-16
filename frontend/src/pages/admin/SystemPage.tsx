@@ -74,7 +74,7 @@ export function SystemPage() {
       <PageHeading
         eyebrow="SYSTEM & TELEMETRY"
         title="Система"
-        description="Фактическое состояние FastAPI, PostgreSQL, crawler worker и корпуса. Будущие поисковые сервисы явно отмечены как не настроенные."
+        description="Фактическое состояние API, PostgreSQL, workers, Qdrant, локальных моделей и корпуса. Недоступные метрики явно показаны как UNKNOWN."
         actions={
           <Button loading={health.isPending} onClick={() => health.mutate()}>
             <Activity className="size-4" />
@@ -101,7 +101,7 @@ export function SystemPage() {
         ))}
       </section>
       <section className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <MetricCard label="CPU" value={`${data.metrics.cpuUsage}%`} />
+        <MetricCard label="CPU" value={formatMetric(data.metrics.cpuUsage, '%')} />
         <UsageCard
           label="RAM"
           value={data.metrics.ramUsageGb}
@@ -121,9 +121,15 @@ export function SystemPage() {
           unit="ГБ"
         />
         <MetricCard label="База данных" value={`${data.metrics.databaseSizeGb} ГБ`} />
-        <MetricCard label="Vector index" value={`${data.metrics.vectorIndexSizeGb} ГБ`} />
-        <MetricCard label="Модель" value={`${data.metrics.modelSizeGb} ГБ`} />
-        <MetricCard label="Docker images" value={`~${data.metrics.dockerImagesEstimateGb} ГБ`} />
+        <MetricCard
+          label="Vector index"
+          value={formatMetric(data.metrics.vectorIndexSizeGb, ' ГБ')}
+        />
+        <MetricCard label="Модель" value={formatMetric(data.metrics.modelSizeGb, ' ГБ')} />
+        <MetricCard
+          label="Docker images"
+          value={formatMetric(data.metrics.dockerImagesEstimateGb, ' ГБ')}
+        />
         <MetricCard label="Документы" value={data.metrics.documentsCount.toLocaleString('ru-RU')} />
         <MetricCard label="Ответы" value={data.metrics.answersCount.toLocaleString('ru-RU')} />
         <MetricCard label="Чанки" value={data.metrics.chunksCount.toLocaleString('ru-RU')} />
@@ -151,9 +157,9 @@ export function SystemPage() {
           <dl className="mt-4 space-y-3 text-sm">
             <Hardware label="ОС" value={data.hardware.operatingSystem} />
             <Hardware label="CPU" value={data.hardware.cpu} />
-            <Hardware label="RAM" value={`${data.hardware.ramGb} ГБ`} />
+            <Hardware label="RAM" value={formatMetric(data.hardware.ramGb, ' ГБ')} />
             <Hardware label="GPU" value={data.hardware.gpu} />
-            <Hardware label="VRAM" value={`${data.hardware.vramGb} ГБ`} />
+            <Hardware label="VRAM" value={formatMetric(data.hardware.vramGb, ' ГБ')} />
             <Hardware label="Лимит проекта" value={`${data.hardware.projectDiskLimitGb} ГБ`} />
             <Hardware label="Приложение" value={data.metrics.applicationVersion} />
             <Hardware
@@ -166,8 +172,7 @@ export function SystemPage() {
           <section className="panel p-5">
             <h2 className="text-sm font-semibold">Системные настройки</h2>
             <p className="mt-1 text-xs text-muted">
-              Публичные ограничения сохраняются в PostgreSQL и применяются к реальным Search/RAG
-              честно возвращают 501.
+              Публичные ограничения сохраняются в PostgreSQL и применяются к реальным Search/RAG.
             </p>
             <div className="mt-5 grid gap-4 sm:grid-cols-2">
               <NumberField
@@ -253,22 +258,26 @@ function UsageCard({
   unit,
 }: {
   label: string;
-  value: number;
-  limit: number;
+  value: number | null;
+  limit: number | null;
   unit: string;
 }) {
-  const percent = limit > 0 ? Math.round((value / limit) * 100) : 0;
+  const percent =
+    value !== null && limit !== null && limit > 0 ? Math.round((value / limit) * 100) : 0;
   return (
     <div className="panel p-4">
       <p className="technical-label">{label}</p>
       <p className="mt-2 font-mono text-xl font-semibold">
-        {value} / {limit} {unit}
+        {value === null ? 'UNKNOWN' : value} / {limit === null ? 'UNKNOWN' : limit} {unit}
       </p>
       <div className="mt-3">
         <ProgressBar value={percent} />
       </div>
     </div>
   );
+}
+function formatMetric(value: number | null, suffix: string) {
+  return value === null ? 'UNKNOWN' : `${value}${suffix}`;
 }
 function Hardware({ label, value }: { label: string; value: string }) {
   return (

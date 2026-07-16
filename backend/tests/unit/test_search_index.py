@@ -95,8 +95,10 @@ def test_schema_hash_is_deterministic_and_model_sensitive() -> None:
     first = index_schema_from_settings(settings())
     second = index_schema_from_settings(settings())
     changed = index_schema_from_settings(settings(EMBEDDING_MODEL="other:1"))
+    compacted = index_schema_from_settings(settings(EMBEDDING_DOCUMENT_MAX_INPUT_TOKENS=64))
     assert first.hash == second.hash
     assert first.hash != changed.hash
+    assert first.hash != compacted.hash
 
 
 def test_point_id_is_stable_and_versioned() -> None:
@@ -175,6 +177,37 @@ async def test_ollama_documents_have_no_query_instruction_and_query_has_it() -> 
         await provider.embed_query("query text")
     assert received[0] == ["document text"]
     assert "Instruct:" in received[1][0] and "Query: query text" in received[1][0]
+
+
+@pytest.mark.asyncio
+async def test_ollama_compacts_only_document_input_deterministically() -> None:
+    received: list[list[str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        received.append(payload["input"])
+        return httpx.Response(200, json={"model": "test", "embeddings": [[0.0] * 4]})
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(handler), base_url="http://ollama.test"
+    ) as client:
+        provider = OllamaEmbeddingProvider(
+            settings(
+                EMBEDDING_DIMENSIONS=4,
+                EMBEDDING_DOCUMENT_MAX_INPUT_TOKENS=32,
+            ),
+            client=client,
+        )
+        document = "prefix " + "middle " * 80 + "suffix"
+        await provider.embed_documents([document])
+        first = received[-1][0]
+        await provider.embed_documents([document])
+        await provider.embed_query("query text")
+
+    assert len(first) <= 32 * 4
+    assert first == received[1][0]
+    assert first.startswith("prefix") and first.endswith("suffix")
+    assert "Instruct:" in received[2][0]
 
 
 @pytest.mark.asyncio

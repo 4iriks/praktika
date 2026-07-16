@@ -157,6 +157,14 @@ class SourceSyncHandler:
         start_page = self._start_page(checkpoint, context, continuation)
         item_offset = self._item_offset(checkpoint, context, continuation)
         fixed_todate = self._fixed_todate(checkpoint, context, continuation)
+        window_rolled = False
+        if mode == SourceSyncMode.INITIAL and start_page > 25 and not self._has_api_key():
+            rollover_todate = await self._initial_rollover_todate(context.source_id)
+            if rollover_todate is not None:
+                fixed_todate = rollover_todate
+                start_page = 1
+                item_offset = 0
+                window_rolled = True
         max_documents = payload.max_documents or (
             200 if payload.dry_run else context.target_documents
         )
@@ -171,6 +179,13 @@ class SourceSyncHandler:
 
         try:
             await self._set_source_syncing(mode, dry_run=payload.dry_run)
+            if window_rolled:
+                await self._record_page_event(
+                    JobStage.FETCHING_QUESTIONS,
+                    "INITIAL_WINDOW_ROLLED",
+                    "Глубокая пагинация продолжена новым окном todate без API key",
+                    {"page": start_page, "todate": fixed_todate},
+                )
             if self._initial_target_reached(mode, context.target_documents):
                 traversal_complete = True
             elif self._counters.questions < max_documents:
@@ -408,6 +423,20 @@ class SourceSyncHandler:
 
     def _initial_target_reached(self, mode: SourceSyncMode, target_documents: int) -> bool:
         return mode == SourceSyncMode.INITIAL and self._source_documents_count >= target_documents
+
+    def _has_api_key(self) -> bool:
+        key = self._settings.stackexchange_key
+        return key is not None and bool(key.get_secret_value())
+
+    async def _initial_rollover_todate(self, source_id: UUID) -> int | None:
+        async with self._session_factory() as session:
+            oldest = await session.scalar(
+                select(func.min(Document.published_at)).where(
+                    Document.source_id == source_id,
+                    Document.processing_status == "CHUNKED",
+                )
+            )
+        return max(0, round(oldest.timestamp()) - 1) if oldest is not None else None
 
     def _remaining_documents(
         self,

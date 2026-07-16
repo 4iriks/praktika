@@ -2,7 +2,7 @@
 
 PostgreSQL остаётся источником истины, Qdrant — полностью производным индексом. Один актуальный `document_chunk` становится одним point. FastAPI только создаёт durable jobs; отдельный `indexer` выполняет embeddings и Qdrant I/O.
 
-Стек закреплён: Qdrant Server `1.18.2`, `qdrant-client==1.18.0`, Ollama `0.32.0`, `qwen3-embedding:0.6b` (1024 dimensions), native `qdrant/bm25` с IDF и `Qwen/Qwen3-Reranker-0.6B` revision `e1775d95f8cf4625eea7879c6edb34beae6c42af`. `/api/search` выполняет BM25, dense или hybrid retrieval; локальный RAG описан в `rag-architecture.md`.
+Стек закреплён: Qdrant Server `1.18.2`, `qdrant-client==1.18.0`, Ollama `0.32.0`, `qwen3-embedding:0.6b` (1024 dimensions), native `qdrant/bm25` с IDF и `Qwen/Qwen3-Reranker-0.6B` revision `1f54aa72c421b677caa56ece526856f8c60144a5`. `/api/search` выполняет BM25, dense или hybrid retrieval; локальный RAG описан в `rag-architecture.md`.
 
 ## Запуск
 

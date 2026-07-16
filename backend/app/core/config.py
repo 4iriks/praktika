@@ -19,7 +19,7 @@ class Settings(BaseSettings):
         default="development", alias="APP_ENV"
     )
     app_name: str = Field(default="PyAnswer API", alias="APP_NAME")
-    app_version: str = Field(default="0.6.3", alias="APP_VERSION")
+    app_version: str = Field(default="0.7.0", alias="APP_VERSION")
     debug: bool = Field(default=False, alias="DEBUG")
     database_url: str = Field(
         default="postgresql+asyncpg://pyanswer:pyanswer@localhost:5432/pyanswer",
@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     )
     test_database_url: str | None = Field(default=None, alias="TEST_DATABASE_URL")
     frontend_origins: list[str] = Field(
-        default_factory=lambda: ["http://localhost:5173"], alias="FRONTEND_ORIGINS"
+        default_factory=lambda: ["http://localhost:8080"], alias="FRONTEND_ORIGINS"
     )
 
     session_cookie_name: str = Field(default="pyanswer_session", alias="SESSION_COOKIE_NAME")
@@ -147,6 +147,12 @@ class Settings(BaseSettings):
     embedding_max_input_tokens: int = Field(
         default=8192, ge=128, le=65536, alias="EMBEDDING_MAX_INPUT_TOKENS"
     )
+    embedding_document_max_input_tokens: int = Field(
+        default=512,
+        ge=16,
+        le=8192,
+        alias="EMBEDDING_DOCUMENT_MAX_INPUT_TOKENS",
+    )
     embedding_query_instruction: str = Field(
         default=(
             "Instruct: Given a Russian Python programming question, retrieve passages that "
@@ -248,16 +254,16 @@ class Settings(BaseSettings):
     reranker_base_url: str = Field(default="http://localhost:8001", alias="RERANKER_BASE_URL")
     reranker_model: str = Field(default="Qwen/Qwen3-Reranker-0.6B", alias="RERANKER_MODEL")
     reranker_model_revision: str = Field(
-        default="e1775d95f8cf4625eea7879c6edb34beae6c42af",
+        default="1f54aa72c421b677caa56ece526856f8c60144a5",
         alias="RERANKER_MODEL_REVISION",
     )
     reranker_device: Literal["cpu", "cuda"] = Field(default="cpu", alias="RERANKER_DEVICE")
     reranker_batch_size: int = Field(default=8, ge=1, le=128, alias="RERANKER_BATCH_SIZE")
-    reranker_max_length: int = Field(default=2048, ge=128, le=32768, alias="RERANKER_MAX_LENGTH")
+    reranker_max_length: int = Field(default=768, ge=128, le=32768, alias="RERANKER_MAX_LENGTH")
     reranker_timeout_seconds: float = Field(
         default=60, gt=0, le=600, alias="RERANKER_TIMEOUT_SECONDS"
     )
-    reranker_top_n: int = Field(default=30, ge=1, le=100, alias="RERANKER_TOP_N")
+    reranker_top_n: int = Field(default=8, ge=1, le=100, alias="RERANKER_TOP_N")
     reranker_required: bool = Field(default=False, alias="RERANKER_REQUIRED")
     reranker_instruction: str = Field(
         default=(
@@ -347,6 +353,19 @@ class Settings(BaseSettings):
         default=60, ge=1, le=3600, alias="AUTH_RATE_LIMIT_WINDOW_SECONDS"
     )
     docs_enabled: bool = Field(default=True, alias="DOCS_ENABLED")
+    project_disk_warning_gb: float = Field(default=27, gt=0, alias="PROJECT_DISK_WARNING_GB")
+    project_disk_critical_gb: float = Field(default=30, gt=0, alias="PROJECT_DISK_CRITICAL_GB")
+    project_disk_limit_gb: float = Field(default=35, gt=0, alias="PROJECT_DISK_LIMIT_GB")
+    backup_retention_count: int = Field(default=3, ge=1, le=100, alias="BACKUP_RETENTION_COUNT")
+    acceptance_minimum_documents: int = Field(
+        default=5000, ge=5000, le=100000, alias="ACCEPTANCE_MINIMUM_DOCUMENTS"
+    )
+    acceptance_api_base_url: str = Field(
+        default="http://backend:8000/api", alias="ACCEPTANCE_API_BASE_URL"
+    )
+    acceptance_demo_password: SecretStr = Field(
+        default=SecretStr(""), alias="ACCEPTANCE_DEMO_PASSWORD"
+    )
 
     @model_validator(mode="after")
     def validate_production(self) -> Settings:
@@ -400,6 +419,12 @@ class Settings(BaseSettings):
             raise ValueError("RAG_SOURCES_LIMIT не может превышать RAG_MAX_SOURCE_COUNT")
         if self.rag_context_token_budget + self.llm_max_output_tokens > self.llm_num_ctx:
             raise ValueError("RAG context и LLM output не помещаются в LLM_NUM_CTX")
+        if not (
+            self.project_disk_warning_gb
+            < self.project_disk_critical_gb
+            < self.project_disk_limit_gb
+        ):
+            raise ValueError("Disk thresholds должны возрастать: WARNING < CRITICAL < LIMIT")
         return self
 
 

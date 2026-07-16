@@ -214,9 +214,13 @@ async def test_indexer_full_document_validate_cleanup_and_cancel() -> None:
     assert await runner.process_once(embeddings=embeddings, qdrant=qdrant) == document_job_id
     async with SessionFactory() as session:
         document = await session.get(Document, document_id)
+        active = await session.get(SearchIndexVersion, active_id)
         assert document is not None
+        assert active is not None
         assert document.bm25_status == IndexStatus.READY
         assert document.vector_status == IndexStatus.READY
+        assert active.point_count == len(qdrant.collections[collection_name])
+        assert active.eligible_chunk_count == active.point_count
 
     validate_job_id = await _queue_job(
         JobType.SEARCH_INDEX_VALIDATE,

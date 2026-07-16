@@ -193,6 +193,29 @@ class QdrantIndexClient:
         )
         return result.count
 
+    async def count_filter(self, collection_name: str, query_filter: models.Filter) -> int:
+        result = await self._run(
+            lambda: self._client.count(
+                collection_name=collection_name,
+                count_filter=query_filter,
+                exact=True,
+            )
+        )
+        return result.count
+
+    async def sample_payloads(
+        self, collection_name: str, *, limit: int = 100
+    ) -> list[dict[str, object]]:
+        records, _ = await self._run(
+            lambda: self._client.scroll(
+                collection_name=collection_name,
+                limit=limit,
+                with_payload=True,
+                with_vectors=False,
+            )
+        )
+        return [dict(record.payload or {}) for record in records]
+
     async def sample_dense_query(self, collection_name: str, vector: Sequence[float]) -> int:
         response = await self._run(
             lambda: self._client.query_points(

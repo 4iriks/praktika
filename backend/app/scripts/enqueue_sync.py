@@ -45,6 +45,7 @@ async def run(args: argparse.Namespace) -> None:
                 if not source.enabled:
                     raise SystemExit("Источник отключён")
                 payload: dict[str, object] = {
+                    "sourceId": str(source.id),
                     "mode": args.mode,
                     "dryRun": args.dry_run,
                 }

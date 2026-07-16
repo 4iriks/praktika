@@ -1,83 +1,135 @@
 # PyAnswer
 
-PyAnswer — локальная интеллектуальная поисковая система по русскоязычным вопросам и ответам о
-Python со Stack Overflow на русском. Репозиторий содержит завершённый frontend Этапов 1–3,
-серверный фундамент Этапа 4 и инфраструктуру ingestion подэтапа 5.1.
+PyAnswer — локальная поисковая и RAG-система по вопросам о Python со Stack Overflow на
+русском. PostgreSQL хранит исходный корпус, Qdrant — производный dense/sparse индекс, а
+Ollama запускает локальные embedding- и generation-модели. Browser работает только с единым
+origin Nginx; прямого доступа к PostgreSQL, Qdrant и Ollama нет.
 
-## Состояние проекта
+## Возможности
 
-- `frontend/` — React, TypeScript strict, Vite, React Router, Tailwind CSS и TanStack Query;
-- `backend/` — FastAPI, Pydantic v2, async SQLAlchemy 2.x, PostgreSQL и Alembic;
-- cookie-auth — opaque server-side session, HttpOnly-cookie и CSRF double-submit token;
-- Argon2id — единственный формат серверного password hash;
-- RBAC — USER, EDITOR и ADMIN с повторной проверкой permissions на сервере;
-- PostgreSQL — users, sessions, documents, answers, tags, history, saved, feedback, jobs, audit,
-  sources и system settings;
-- ingestion 5.1 — durable PostgreSQL queue, отдельный worker, checkpoint/events и типизированный
-  Stack Exchange API client;
-- mock mode frontend сохранён и остаётся значением по умолчанию;
-- `/api/search` выполняет настоящий BM25/vector/hybrid retrieval через Qdrant;
-- `/api/ask` и `/api/ask/stream` выполняют локальный grounded RAG через Ollama.
+- React + TypeScript frontend и FastAPI backend;
+- регистрация, HttpOnly sessions, CSRF, Argon2id и серверный RBAC USER/EDITOR/ADMIN;
+- durable ingestion/index jobs с lease, heartbeat, checkpoint, cancellation и retry;
+- Stack Exchange pagination, quota/backoff, очистка HTML и сохранение Python-кода;
+- identity/exact-content deduplication, revisions и детерминированные chunks;
+- Qdrant sparse BM25, dense HNSW, weighted RRF и локальный reranker;
+- grounded RAG через Ollama с insufficient-context gate, SSE и проверяемыми citations;
+- audit, operational panels, manifests, consistency checks и backup validation.
 
-## Быстрый запуск frontend
+## Системные требования
 
-```bash
-cd frontend
-npm install
-npm run dev
-```
+- Ubuntu/Linux, Docker Engine и Docker Compose plugin либо `docker-compose`;
+- 32 ГБ RAM рекомендовано; CPU-режим поддерживается;
+- NVIDIA GPU необязателен. Для `compose.gpu.yaml` нужны рабочий драйвер и NVIDIA Container
+  Toolkit;
+- минимум 35 ГБ свободного дискового бюджета проекта. Команда `make disk-report` показывает
+  фактические доступные измерения и честно отмечает недоступные.
 
-По умолчанию `VITE_USE_MOCKS=true`, поэтому весь пользовательский, редакторский и
-административный сценарий работает без backend.
+Версии сервисов и моделей закреплены в [compose.yaml](compose.yaml) и
+[config/models.yaml](config/models.yaml). Большие модели не скачиваются при build, migration,
+tests или обычном `demo-up`.
 
-## PostgreSQL и backend
-
-Создайте локальный `.env` по корневому `.env.example`, задав собственный
-`POSTGRES_PASSWORD`. Файл `.env` не попадает в Git.
+## Первый запуск
 
 ```bash
-docker compose up -d postgres
-docker compose run --rm backend alembic upgrade head
-docker compose run --rm backend python -m app.scripts.bootstrap
-docker compose run --rm backend python -m app.scripts.seed_demo
-docker compose up backend
-make worker-up
+make first-run
 ```
 
-Worker использует тот же backend image, не публикует порт и запускается отдельно от FastAPI.
-`make worker-health` показывает container state и последние heartbeat records.
+Команда создаёт локальный `.env`, только если файла ещё нет, запускает инфраструктуру,
+применяет migrations, выполняет идемпотентные bootstrap/demo seed и выводит статус. Она не
+скачивает большие модели и не запускает полный импорт.
 
-Локальный запуск без Docker описан в [backend/README.md](backend/README.md). Swagger в
-development доступен по `http://localhost:8000/api/docs`.
+Затем явно загрузите модели и поднимите demo:
 
-Demo seed создаёт:
+```bash
+make models-check
+make models-pull
+make demo-up
+```
 
-| Роль   | Email                   | Пароль     |
-| ------ | ----------------------- | ---------- |
-| USER   | `user@pyanswer.local`   | `Demo123!` |
+Единый адрес: **http://localhost:8080**. Swagger в development доступен через
+`http://localhost:8080/api/docs`.
+
+Demo accounts предназначены только для локальной демонстрации:
+
+| Роль | Email | Пароль |
+|---|---|---|
+| USER | `user@pyanswer.local` | `Demo123!` |
 | EDITOR | `editor@pyanswer.local` | `Demo123!` |
-| ADMIN  | `admin@pyanswer.local`  | `Demo123!` |
+| ADMIN | `admin@pyanswer.local` | `Demo123!` |
 
-Эти данные предназначены только для локальной демонстрации. В production demo seed выключен.
+## Корпус и индекс
 
-## Проверки
+Сначала получите `SOURCE_ID` на странице `/admin/sources` или из локального ingestion report.
 
-Backend, при настроенном disposable `TEST_DATABASE_URL` с `test` в имени БД:
+```bash
+make import-smoke SOURCE_ID=<uuid>
+RUN_LIVE_MINIMUM_IMPORT=1 make import-minimum SOURCE_ID=<uuid>
+CONFIRM_INDEX_FULL=YES make index-full
+make index-status
+```
+
+Импорт без лимита защищён явным флагом:
+
+```bash
+RUN_FULL_IMPORT=1 make import-full SOURCE_ID=<uuid>
+```
+
+Ни `first-run`, ни tests не запускают живой импорт. Источник, attribution и URL сохраняются;
+синтетические записи не учитываются как выполнение минимального корпуса.
+
+## Проверки и отчёты
+
+```bash
+make verify-all
+make corpus-manifest
+make data-check
+make index-check
+make disk-report
+make demo-check
+```
+
+Фактические отчёты создаются в `artifacts/` и используют статусы `PASS`, `WARNING`, `FAIL` и
+`NOT_RUN`. Невыполненная live-проверка никогда не превращается в PASS.
+
+Evaluation запускается только на вручную проверенных (`reviewed=true`) qrels:
+
+```bash
+make evaluate
+```
+
+Dataset находится в `evaluation/`; порядок ручной разметки описан в
+[evaluation-review.md](docs/final/evaluation-review.md).
+
+## Backup и restore drill
+
+```bash
+make backup
+make restore-check BACKUP_PATH=backups/<timestamp>
+```
+
+Backup включает `pg_dump`, Qdrant snapshot при наличии active alias, manifests и checksums,
+но не `.env`, cookies, API keys или Ollama binaries. Restore check использует disposable
+окружение и не перезаписывает основную БД.
+
+## Разработка
+
+Backend:
 
 ```bash
 cd backend
+python -m pip install -e '.[dev]'
 ruff check .
 ruff format --check .
 mypy app
 pytest --cov=app --cov-report=term-missing --cov-fail-under=80
-alembic upgrade head
-alembic check
 ```
 
 Frontend:
 
 ```bash
 cd frontend
+npm install
 npm run typecheck
 npm run lint
 npm run test
@@ -85,39 +137,25 @@ npm run build
 npm run format:check
 ```
 
+Mock frontend mode сохранён для изолированной разработки. Production frontend image собирается
+с `VITE_USE_MOCKS=false` и `/api` на том же origin.
+
 ## Документация
 
-- [Этап 4](docs/backend-stage4.md);
-- [ER-диаграмма](docs/erd.md);
-- [API contract](docs/api-contract.md);
-- [SQL-примеры](docs/sql_examples.sql);
-- [Worker architecture](docs/worker-architecture.md);
-- [Stack Exchange client](docs/stackexchange-client.md);
-- [Ingestion Этапа 5](docs/stage5-ingestion.md);
-- [Runbook полной загрузки](docs/ingestion-runbook.md);
-- [Поисковый индекс Этапа 6](docs/stage6-search-index.md);
-- [Hybrid ranking](docs/hybrid-ranking.md) и [retrieval evaluation](docs/retrieval-evaluation.md);
-- [Архитектура RAG](docs/rag-architecture.md), [SSE](docs/rag-streaming.md),
-  [безопасность](docs/rag-security.md) и [runbook Этапа 6](docs/stage6-runbook.md);
-- сохранённые задания: [Этап 4](docs/prompts/stage-4.md) и
-  [полный комплект Этапа 5](docs/prompts/stage-5.md) с отдельными промтами 5.1–5.3.
+- [Архитектура ingestion](docs/stage5-ingestion.md),
+  [worker](docs/worker-architecture.md) и [полный import runbook](docs/ingestion-runbook.md);
+- [Qdrant/indexer](docs/stage6-search-index.md), [hybrid ranking](docs/hybrid-ranking.md),
+  [RAG](docs/rag-architecture.md) и [Stage 6 runbook](docs/stage6-runbook.md);
+- [ERD](docs/erd.md), [API contract](docs/api-contract.md) и
+  [SQL для защиты](docs/final/sql-demo.md);
+- [traceability](docs/final/requirements-traceability.md),
+  [отчёт](docs/final/report-source.md), [презентация](docs/final/presentation-outline.md),
+  [demo script](docs/final/demo-script.md) и [вопросы защиты](docs/final/defense-qa.md);
+- [troubleshooting](docs/final/troubleshooting.md).
 
-## Этап 5: ingestion Stack Exchange
+## Ограничения и attribution
 
-Отдельный worker обрабатывает durable PostgreSQL jobs с claim/lease/heartbeat, checkpoint,
-cancellation и stale recovery. Типизированный клиент получает вопросы постранично и ответы
-batch-запросами до 100 ID, соблюдает `has_more`, quota, backoff и ограниченные retries. Pipeline
-очищает HTML, сохраняет код, выбирает ответы, строит canonical SHA-256 hashes, revisions и
-детерминированные chunks. ADMIN/EDITOR UI показывает реальный прогресс и состояние корпуса.
-
-Полный импорт 25 000 веток автоматически не запускается; см. [runbook](docs/ingestion-runbook.md).
-Поиск не имитируется через SQL. Qdrant содержит dense HNSW и native sparse BM25, hybrid
-использует weighted RRF и локальный reranker.
-
-# Этап 6
-
-Проект получил self-hosted Qdrant, dense embeddings через Ollama, native sparse BM25,
-durable indexer и blue-green переиндексацию. HTTP mode поддерживает BM25, vector и hybrid
-поиск и weighted RRF. Локальный RAG использует обязательный reranker и Ollama `qwen3:8b`,
-проверяет insufficient context до вызова LLM, stream-ит только answer content и валидирует
-citations. Модели скачиваются только явной командой `make models-pull`.
+Qdrant является восстанавливаемым индексом, а PostgreSQL — source of truth. На CPU первичная
+индексация и локальная генерация заметно медленнее GPU. Evaluation без проверенной ручной
+разметки считается preliminary. Контент принадлежит авторам Stack Overflow на русском и
+используется с сохранением ссылок, авторства и доступной лицензии источника.

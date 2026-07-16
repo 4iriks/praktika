@@ -302,14 +302,14 @@ class SystemServiceOut(ApiModel):
 
 
 class SystemMetricsOut(ApiModel):
-    cpu_usage: float
-    ram_usage_gb: float
-    vram_usage_gb: float
+    cpu_usage: float | None
+    ram_usage_gb: float | None
+    vram_usage_gb: float | None
     disk_usage_gb: float
     database_size_gb: float
-    vector_index_size_gb: float
-    model_size_gb: float
-    docker_images_estimate_gb: float
+    vector_index_size_gb: float | None
+    model_size_gb: float | None
+    docker_images_estimate_gb: float | None
     documents_count: int
     answers_count: int
     chunks_count: int
@@ -323,10 +323,10 @@ class SystemMetricsOut(ApiModel):
 class SystemHardwareOut(ApiModel):
     operating_system: str
     cpu: str
-    ram_gb: int
+    ram_gb: int | None
     gpu: str
-    vram_gb: int
-    project_disk_limit_gb: int
+    vram_gb: int | None
+    project_disk_limit_gb: float
 
 
 class SystemStatusOut(ApiModel):

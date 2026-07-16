@@ -53,14 +53,15 @@ class OllamaEmbeddingProvider(EmbeddingProvider):
             "provider": self.provider_name,
             "model": self.model_name,
             "dimensions": self.dimensions,
-            "documentPreprocessing": "contextual_text:v1",
+            "documentPreprocessing": "contextual_text:compact-v2",
+            "documentMaxInputTokens": self._settings.embedding_document_max_input_tokens,
             "queryInstruction": self._settings.embedding_query_instruction,
         }
         encoded = json.dumps(data, sort_keys=True, separators=(",", ":")).encode()
         return hashlib.sha256(encoded).hexdigest()
 
     async def embed_documents(self, texts: list[str]) -> EmbeddingBatch:
-        return await self._embed(texts)
+        return await self._embed([self._compact_document_text(text) for text in texts])
 
     async def embed_query(self, query: str) -> EmbeddingBatch:
         normalized = query.strip()
@@ -145,6 +146,25 @@ class OllamaEmbeddingProvider(EmbeddingProvider):
             dimensions=self.dimensions,
             prompt_tokens=_optional_int(payload.get("prompt_eval_count")),
             total_duration_ns=_optional_int(payload.get("total_duration")),
+        )
+
+    def _compact_document_text(self, text: str) -> str:
+        normalized = text.strip()
+        max_characters = self._settings.embedding_document_max_input_tokens * 4
+        if len(normalized) <= max_characters:
+            return normalized
+        separator = "\n…\n"
+        available = max_characters - len(separator) * 2
+        head_size = available * 2 // 5
+        middle_size = available * 2 // 5
+        tail_size = available - head_size - middle_size
+        middle_start = max(head_size, (len(normalized) - middle_size) // 2)
+        return separator.join(
+            (
+                normalized[:head_size],
+                normalized[middle_start : middle_start + middle_size],
+                normalized[-tail_size:],
+            )
         )
 
     async def _request_with_retry(self, payload: dict[str, object]) -> httpx.Response:

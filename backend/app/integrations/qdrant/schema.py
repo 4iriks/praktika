@@ -67,7 +67,9 @@ def index_schema_from_settings(settings: Settings) -> IndexSchema:
         dense_provider=settings.embedding_provider,
         dense_model=settings.embedding_model,
         dense_dimensions=settings.embedding_dimensions,
-        document_preprocessing_version="contextual_text:v1",
+        document_preprocessing_version=(
+            f"contextual_text:compact-v2:{settings.embedding_document_max_input_tokens}tokens"
+        ),
         query_instruction_hash=instruction_hash,
         sparse_provider=settings.sparse_provider,
         sparse_model=settings.sparse_model,

@@ -11,10 +11,14 @@ class SnapshotDownload(Protocol):
     def __call__(self, *, repo_id: str, revision: str, local_files_only: bool = False) -> str: ...
 
 
+class HuggingFaceHubModule(Protocol):
+    snapshot_download: SnapshotDownload
+
+
 def main() -> None:
     settings = get_settings()
-    module = import_module("huggingface_hub")
-    download = cast(SnapshotDownload, module.__dict__["snapshot_download"])
+    module = cast(HuggingFaceHubModule, import_module("huggingface_hub"))
+    download = module.snapshot_download
     path = download(
         repo_id=settings.reranker_model,
         revision=settings.reranker_model_revision,

@@ -19,6 +19,10 @@ class CrossEncoderLike(Protocol):
     ) -> Sequence[float]: ...
 
 
+class SentenceTransformersModule(Protocol):
+    CrossEncoder: Callable[..., CrossEncoderLike]
+
+
 class RerankRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -45,8 +49,8 @@ runtime = Runtime()
 
 def _load_model() -> CrossEncoderLike:
     settings = get_settings()
-    module = import_module("sentence_transformers")
-    encoder_type = cast(Callable[..., CrossEncoderLike], module.__dict__["CrossEncoder"])
+    module = cast(SentenceTransformersModule, import_module("sentence_transformers"))
+    encoder_type = module.CrossEncoder
     return encoder_type(
         settings.reranker_model,
         revision=settings.reranker_model_revision,

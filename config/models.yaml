@@ -1,0 +1,27 @@
+{
+  "configVersion": "7.0.0",
+  "embedding": {
+    "provider": "ollama",
+    "model": "qwen3-embedding:0.6b",
+    "dimensions": 1024,
+    "expectedContextTokens": 8192,
+    "approximateDiskSizeGb": 0.7,
+    "service": "ollama"
+  },
+  "generation": {
+    "provider": "ollama",
+    "model": "qwen3:8b",
+    "expectedContextTokens": 8192,
+    "quantization": "resolved by the installed Ollama manifest",
+    "approximateDiskSizeGb": 5.2,
+    "service": "ollama"
+  },
+  "reranker": {
+    "provider": "sentence-transformers",
+    "model": "Qwen/Qwen3-Reranker-0.6B",
+    "revision": "1f54aa72c421b677caa56ece526856f8c60144a5",
+    "approximateDiskSizeGb": 1.3,
+    "service": "reranker"
+  },
+  "notes": "Disk sizes are planning estimates; release and disk reports use observed values when available."
+}

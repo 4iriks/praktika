@@ -1,0 +1,40 @@
+{"id":"s001","query":"ModuleNotFoundError при импорте локального модуля","category":"сообщение об ошибке","relevantDocumentExternalIds":[],"difficulty":"medium","notes":"Кандидаты требуют ручной разметки по live-корпусу","createdBy":"project author","reviewed":false}
+{"id":"s002","query":"как объединить два словаря python","category":"структуры данных","relevantDocumentExternalIds":[],"difficulty":"easy","notes":"","createdBy":"project author","reviewed":false}
+{"id":"s003","query":"asyncio gather обработка исключений","category":"async/await","relevantDocumentExternalIds":[],"difficulty":"medium","notes":"","createdBy":"project author","reviewed":false}
+{"id":"s004","query":"TypeError object NoneType can't be used in await expression","category":"сообщение об ошибке","relevantDocumentExternalIds":[],"difficulty":"hard","notes":"","createdBy":"project author","reviewed":false}
+{"id":"s005","query":"pandas groupby несколько агрегатных функций","category":"pandas","relevantDocumentExternalIds":[],"difficulty":"medium","notes":"","createdBy":"project author","reviewed":false}
+{"id":"s006","query":"numpy изменить форму массива reshape","category":"NumPy","relevantDocumentExternalIds":[],"difficulty":"easy","notes":"","createdBy":"project author","reviewed":false}
+{"id":"s007","query":"FastAPI dependency injection AsyncSession","category":"FastAPI","relevantDocumentExternalIds":[],"difficulty":"medium","notes":"","createdBy":"project author","reviewed":false}
+{"id":"s008","query":"Django select_related и prefetch_related разница","category":"Django","relevantDocumentExternalIds":[],"difficulty":"medium","notes":"","createdBy":"project author","reviewed":false}
+{"id":"s009","query":"Flask application factory pattern","category":"Flask","relevantDocumentExternalIds":[],"difficulty":"medium","notes":"","createdBy":"project author","reviewed":false}
+{"id":"s010","query":"requests timeout и retry 503","category":"requests","relevantDocumentExternalIds":[],"difficulty":"medium","notes":"","createdBy":"project author","reviewed":false}
+{"id":"s011","query":"SQLAlchemy 2 async transaction rollback","category":"SQLAlchemy","relevantDocumentExternalIds":[],"difficulty":"hard","notes":"","createdBy":"project author","reviewed":false}
+{"id":"s012","query":"pytest parametrization примеры","category":"pytest","relevantDocumentExternalIds":[],"difficulty":"easy","notes":"","createdBy":"project author","reviewed":false}
+{"id":"s013","query":"Selenium wait element clickable","category":"Selenium","relevantDocumentExternalIds":[],"difficulty":"easy","notes":"","createdBy":"project author","reviewed":false}
+{"id":"s014","query":"venv использует неправильный python","category":"virtualenv/imports","relevantDocumentExternalIds":[],"difficulty":"medium","notes":"","createdBy":"project author","reviewed":false}
+{"id":"s015","query":"collections.defaultdict когда использовать","category":"стандартная библиотека","relevantDocumentExternalIds":[],"difficulty":"easy","notes":"","createdBy":"project author","reviewed":false}
+{"id":"s016","query":"__slots__ dataclass python","category":"точный технический термин","relevantDocumentExternalIds":[],"difficulty":"medium","notes":"","createdBy":"project author","reviewed":false}
+{"id":"s017","query":"разбить большой список на части","category":"поиск по смыслу","relevantDocumentExternalIds":[],"difficulty":"easy","notes":"","createdBy":"project author","reviewed":false}
+{"id":"s018","query":"получить уникальные элементы сохранив порядок","category":"перефразированный вопрос","relevantDocumentExternalIds":[],"difficulty":"medium","notes":"","createdBy":"project author","reviewed":false}
+{"id":"s019","query":"генератор читает файл построчно","category":"code-oriented query","relevantDocumentExternalIds":[],"difficulty":"easy","notes":"","createdBy":"project author","reviewed":false}
+{"id":"s020","query":"KeyError безопасно получить значение","category":"сообщение об ошибке","relevantDocumentExternalIds":[],"difficulty":"easy","notes":"","createdBy":"project author","reviewed":false}
+{"id":"s021","query":"декоратор с аргументами","category":"точный технический термин","relevantDocumentExternalIds":[],"difficulty":"medium","notes":"","createdBy":"project author","reviewed":false}
+{"id":"s022","query":"контекстный менеджер async with","category":"async/await","relevantDocumentExternalIds":[],"difficulty":"medium","notes":"","createdBy":"project author","reviewed":false}
+{"id":"s023","query":"сортировка списка объектов по двум полям","category":"структуры данных","relevantDocumentExternalIds":[],"difficulty":"easy","notes":"","createdBy":"project author","reviewed":false}
+{"id":"s024","query":"регулярное выражение email python","category":"стандартная библиотека","relevantDocumentExternalIds":[],"difficulty":"easy","notes":"","createdBy":"project author","reviewed":false}
+{"id":"s025","query":"pandas merge left join дубликаты","category":"pandas","relevantDocumentExternalIds":[],"difficulty":"medium","notes":"","createdBy":"project author","reviewed":false}
+{"id":"s026","query":"numpy broadcasting shapes mismatch","category":"NumPy","relevantDocumentExternalIds":[],"difficulty":"hard","notes":"","createdBy":"project author","reviewed":false}
+{"id":"s027","query":"uvicorn запускает приложение два раза reload","category":"FastAPI","relevantDocumentExternalIds":[],"difficulty":"medium","notes":"","createdBy":"project author","reviewed":false}
+{"id":"s028","query":"Django migration column does not exist","category":"Django","relevantDocumentExternalIds":[],"difficulty":"hard","notes":"","createdBy":"project author","reviewed":false}
+{"id":"s029","query":"requests Session cookies","category":"requests","relevantDocumentExternalIds":[],"difficulty":"medium","notes":"","createdBy":"project author","reviewed":false}
+{"id":"s030","query":"sqlalchemy unique constraint conflict","category":"SQLAlchemy","relevantDocumentExternalIds":[],"difficulty":"medium","notes":"","createdBy":"project author","reviewed":false}
+{"id":"s031","query":"pytest async fixture scope","category":"pytest","relevantDocumentExternalIds":[],"difficulty":"hard","notes":"","createdBy":"project author","reviewed":false}
+{"id":"s032","query":"selenium stale element reference","category":"Selenium","relevantDocumentExternalIds":[],"difficulty":"medium","notes":"","createdBy":"project author","reviewed":false}
+{"id":"s033","query":"pip устанавливает пакет не в то окружение","category":"virtualenv/imports","relevantDocumentExternalIds":[],"difficulty":"medium","notes":"","createdBy":"project author","reviewed":false}
+{"id":"s034","query":"yield from отличие от yield","category":"точный технический термин","relevantDocumentExternalIds":[],"difficulty":"medium","notes":"","createdBy":"project author","reviewed":false}
+{"id":"s035","query":"считать частоту слов в строке","category":"поиск по смыслу","relevantDocumentExternalIds":[],"difficulty":"easy","notes":"","createdBy":"project author","reviewed":false}
+{"id":"s036","query":"как параллельно выполнить корутины с лимитом","category":"перефразированный вопрос","relevantDocumentExternalIds":[],"difficulty":"hard","notes":"","createdBy":"project author","reviewed":false}
+{"id":"s037","query":"python f-string формат даты","category":"code-oriented query","relevantDocumentExternalIds":[],"difficulty":"easy","notes":"","createdBy":"project author","reviewed":false}
+{"id":"s038","query":"mutable default argument","category":"точный технический термин","relevantDocumentExternalIds":[],"difficulty":"medium","notes":"","createdBy":"project author","reviewed":false}
+{"id":"s039","query":"ускорить программу","category":"недостаточно конкретный запрос","relevantDocumentExternalIds":[],"difficulty":"hard","notes":"Ожидается низкая точность","createdBy":"project author","reviewed":false}
+{"id":"s040","query":"ошибка в коде","category":"недостаточно конкретный запрос","relevantDocumentExternalIds":[],"difficulty":"hard","notes":"Ожидается низкая точность","createdBy":"project author","reviewed":false}

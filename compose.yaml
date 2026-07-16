@@ -1,5 +1,11 @@
 name: pyanswer
 
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
 x-ingestion-environment: &ingestion-environment
   STACK_EXCHANGE_SITE: ${STACK_EXCHANGE_SITE:-ru.stackoverflow}
   STACK_EXCHANGE_TAG: ${STACK_EXCHANGE_TAG:-python}
@@ -42,6 +48,7 @@ x-search-environment: &search-environment
   EMBEDDING_TIMEOUT_SECONDS: ${EMBEDDING_TIMEOUT_SECONDS:-120}
   EMBEDDING_MAX_RETRIES: ${EMBEDDING_MAX_RETRIES:-3}
   EMBEDDING_KEEP_ALIVE: ${EMBEDDING_KEEP_ALIVE:-5m}
+  EMBEDDING_DOCUMENT_MAX_INPUT_TOKENS: ${EMBEDDING_DOCUMENT_MAX_INPUT_TOKENS:-512}
   SPARSE_PROVIDER: ${SPARSE_PROVIDER:-qdrant_bm25}
   SPARSE_MODEL: ${SPARSE_MODEL:-qdrant/bm25}
   INDEX_SCHEMA_VERSION: ${INDEX_SCHEMA_VERSION:-6.1}
@@ -61,8 +68,10 @@ x-search-environment: &search-environment
   SEARCH_MAX_CANDIDATES: ${SEARCH_MAX_CANDIDATES:-500}
   RERANKER_BASE_URL: ${RERANKER_BASE_URL:-http://reranker:8001}
   RERANKER_MODEL: ${RERANKER_MODEL:-Qwen/Qwen3-Reranker-0.6B}
-  RERANKER_MODEL_REVISION: ${RERANKER_MODEL_REVISION:-e1775d95f8cf4625eea7879c6edb34beae6c42af}
+  RERANKER_MODEL_REVISION: ${RERANKER_MODEL_REVISION:-1f54aa72c421b677caa56ece526856f8c60144a5}
   RERANKER_REQUIRED: ${RERANKER_REQUIRED:-false}
+  RERANKER_TOP_N: ${RERANKER_TOP_N:-8}
+  RERANKER_MAX_LENGTH: ${RERANKER_MAX_LENGTH:-768}
   LLM_PROVIDER: ${LLM_PROVIDER:-ollama}
   LLM_MODEL: ${LLM_MODEL:-qwen3:8b}
   LLM_BASE_URL: ${LLM_BASE_URL:-http://ollama:11434}
@@ -78,7 +87,7 @@ x-search-environment: &search-environment
   LLM_THINK: "false"
   RAG_SEARCH_MODE: ${RAG_SEARCH_MODE:-hybrid}
   RAG_CANDIDATE_LIMIT: ${RAG_CANDIDATE_LIMIT:-80}
-  RAG_RERANK_LIMIT: ${RAG_RERANK_LIMIT:-30}
+  RAG_RERANK_LIMIT: ${RAG_RERANK_LIMIT:-8}
   RAG_SOURCES_LIMIT: ${RAG_SOURCES_LIMIT:-5}
   RAG_MAX_CHUNKS_PER_DOCUMENT: ${RAG_MAX_CHUNKS_PER_DOCUMENT:-2}
   RAG_CONTEXT_TOKEN_BUDGET: ${RAG_CONTEXT_TOKEN_BUDGET:-5000}
@@ -88,7 +97,7 @@ x-search-environment: &search-environment
   RAG_RERANKER_REQUIRED: ${RAG_RERANKER_REQUIRED:-true}
 
 x-backend-image: &backend-image
-  image: pyanswer-backend:${APP_VERSION:-0.6.3}
+  image: pyanswer-backend:${APP_VERSION:-0.7.0}
   build:
     context: ./backend
     dockerfile: Dockerfile
@@ -103,7 +112,8 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
       POSTGRES_INITDB_ARGS: --encoding=UTF8 --locale=C.UTF-8
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    logging: *default-logging
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -120,6 +130,7 @@ services:
       - "127.0.0.1:${QDRANT_PORT:-6333}:6333"
     volumes:
       - qdrant_data:/qdrant/storage
+    logging: *default-logging
     healthcheck:
       test: ["CMD-SHELL", "bash -c ':> /dev/tcp/127.0.0.1/6333'"]
       interval: 10s
@@ -135,6 +146,7 @@ services:
     environment:
       OLLAMA_MAX_LOADED_MODELS: ${OLLAMA_MAX_LOADED_MODELS:-2}
       OLLAMA_NUM_PARALLEL: ${OLLAMA_NUM_PARALLEL:-1}
+    logging: *default-logging
     healthcheck:
       test: ["CMD", "ollama", "list"]
       interval: 10s
@@ -151,10 +163,10 @@ services:
       <<: [*ingestion-environment, *search-environment]
       APP_ENV: ${APP_ENV:-development}
       APP_NAME: ${APP_NAME:-PyAnswer API}
-      APP_VERSION: ${APP_VERSION:-0.6.3}
+      APP_VERSION: ${APP_VERSION:-0.7.0}
       DEBUG: ${DEBUG:-false}
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-pyanswer}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-pyanswer}
-      FRONTEND_ORIGINS: ${FRONTEND_ORIGINS:-["http://localhost:5173"]}
+      FRONTEND_ORIGINS: ${FRONTEND_ORIGINS:-["http://localhost:8080"]}
       SESSION_COOKIE_NAME: ${SESSION_COOKIE_NAME:-pyanswer_session}
       CSRF_COOKIE_NAME: ${CSRF_COOKIE_NAME:-pyanswer_csrf}
       SESSION_TTL_HOURS: ${SESSION_TTL_HOURS:-12}
@@ -169,7 +181,8 @@ services:
       BOOTSTRAP_ADMIN_NAME: ${BOOTSTRAP_ADMIN_NAME:-Администратор}
       SEED_DEMO_DATA: ${SEED_DEMO_DATA:-false}
     ports:
-      - "${BACKEND_PORT:-8000}:8000"
+      - "127.0.0.1:${BACKEND_PORT:-8000}:8000"
+    logging: *default-logging
     depends_on:
       postgres:
         condition: service_healthy
@@ -196,16 +209,23 @@ services:
       <<: *ingestion-environment
       APP_ENV: ${APP_ENV:-development}
       APP_NAME: ${APP_NAME:-PyAnswer Worker}
-      APP_VERSION: ${APP_VERSION:-0.6.3}
+      APP_VERSION: ${APP_VERSION:-0.7.0}
       DEBUG: ${DEBUG:-false}
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-pyanswer}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-pyanswer}
-      FRONTEND_ORIGINS: ${FRONTEND_ORIGINS:-["http://localhost:5173"]}
+      FRONTEND_ORIGINS: ${FRONTEND_ORIGINS:-["http://localhost:8080"]}
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
       COOKIE_SAMESITE: ${COOKIE_SAMESITE:-lax}
       SEED_DEMO_DATA: "false"
     depends_on:
       postgres:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-m", "app.scripts.worker_health", "--capability", "source_sync"]
+      interval: 20s
+      timeout: 8s
+      retries: 5
+      start_period: 20s
+    logging: *default-logging
 
   indexer:
     <<: *backend-image
@@ -217,10 +237,10 @@ services:
       <<: [*ingestion-environment, *search-environment]
       APP_ENV: ${APP_ENV:-development}
       APP_NAME: ${APP_NAME:-PyAnswer Indexer}
-      APP_VERSION: ${APP_VERSION:-0.6.3}
+      APP_VERSION: ${APP_VERSION:-0.7.0}
       DEBUG: ${DEBUG:-false}
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-pyanswer}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-pyanswer}
-      FRONTEND_ORIGINS: ${FRONTEND_ORIGINS:-["http://localhost:5173"]}
+      FRONTEND_ORIGINS: ${FRONTEND_ORIGINS:-["http://localhost:8080"]}
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
       COOKIE_SAMESITE: ${COOKIE_SAMESITE:-lax}
       SEED_DEMO_DATA: "false"
@@ -231,9 +251,16 @@ services:
         condition: service_healthy
       ollama:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-m", "app.scripts.worker_health", "--capability", "search_index"]
+      interval: 20s
+      timeout: 8s
+      retries: 5
+      start_period: 20s
+    logging: *default-logging
 
   reranker:
-    image: pyanswer-reranker:${APP_VERSION:-0.6.3}
+    image: pyanswer-reranker:${APP_VERSION:-0.7.0}
     build:
       context: ./backend
       dockerfile: Dockerfile.reranker
@@ -242,20 +269,57 @@ services:
     stop_grace_period: 25s
     environment:
       APP_ENV: ${APP_ENV:-development}
-      APP_VERSION: ${APP_VERSION:-0.6.3}
+      APP_VERSION: ${APP_VERSION:-0.7.0}
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-pyanswer}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-pyanswer}
-      FRONTEND_ORIGINS: ${FRONTEND_ORIGINS:-["http://localhost:5173"]}
+      FRONTEND_ORIGINS: ${FRONTEND_ORIGINS:-["http://localhost:8080"]}
       RERANKER_MODEL: ${RERANKER_MODEL:-Qwen/Qwen3-Reranker-0.6B}
-      RERANKER_MODEL_REVISION: ${RERANKER_MODEL_REVISION:-e1775d95f8cf4625eea7879c6edb34beae6c42af}
+      RERANKER_MODEL_REVISION: ${RERANKER_MODEL_REVISION:-1f54aa72c421b677caa56ece526856f8c60144a5}
       RERANKER_DEVICE: ${RERANKER_DEVICE:-cpu}
       RERANKER_BATCH_SIZE: ${RERANKER_BATCH_SIZE:-8}
-      RERANKER_MAX_LENGTH: ${RERANKER_MAX_LENGTH:-2048}
+      RERANKER_MAX_LENGTH: ${RERANKER_MAX_LENGTH:-768}
+      RERANKER_TOP_N: ${RERANKER_TOP_N:-8}
       HF_HOME: /models/huggingface
     volumes:
       - reranker_models:/models/huggingface
     depends_on:
       postgres:
         condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health/ready', timeout=3)",
+        ]
+      interval: 20s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    logging: *default-logging
+
+  frontend:
+    image: pyanswer-frontend:${APP_VERSION:-0.7.0}
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_USE_MOCKS: "false"
+        VITE_API_BASE_URL: /api
+    restart: unless-stopped
+    init: true
+    ports:
+      - "127.0.0.1:${FRONTEND_PORT:-8080}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    logging: *default-logging
 
 volumes:
   postgres_data:

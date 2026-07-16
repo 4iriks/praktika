@@ -196,6 +196,9 @@ class SearchIndexJobHandler:
         if not eligible:
             await self._qdrant.delete_document_points(collection_name, job.document_id)
             async with self._session_factory() as session, session.begin():
+                previous_points = await self._indexed_document_entry_count(
+                    session, active_id, job.document_id
+                )
                 await session.execute(
                     update(SearchIndexEntry)
                     .where(
@@ -209,6 +212,7 @@ class SearchIndexJobHandler:
                     locked.bm25_status = IndexStatus.NOT_INDEXED
                     locked.vector_status = IndexStatus.NOT_INDEXED
                     locked.last_indexed_at = None
+                await self._apply_active_version_delta(session, active_id, -previous_points)
                 await self._add_worker_audit(
                     session,
                     job,
@@ -238,6 +242,9 @@ class SearchIndexJobHandler:
                     "Документ изменился во время индексации",
                     retryable=True,
                 )
+            previous_points = await self._indexed_document_entry_count(
+                session, active_id, document.id
+            )
             await session.execute(
                 update(SearchIndexEntry)
                 .where(
@@ -247,6 +254,9 @@ class SearchIndexJobHandler:
                 .values(status=SearchIndexEntryStatus.REMOVED)
             )
             await self._store_entries(session, prepared)
+            await self._apply_active_version_delta(
+                session, active_id, len(prepared) - previous_points
+            )
             now = utc_now()
             locked.bm25_status = IndexStatus.READY
             locked.vector_status = IndexStatus.READY
@@ -743,6 +753,32 @@ class SearchIndexJobHandler:
             record.failure_code = None
             record.failure_message = None
         await session.flush()
+
+    @staticmethod
+    async def _indexed_document_entry_count(
+        session: AsyncSession, version_id: UUID, document_id: UUID
+    ) -> int:
+        return int(
+            await session.scalar(
+                select(func.count())
+                .select_from(SearchIndexEntry)
+                .where(
+                    SearchIndexEntry.index_version_id == version_id,
+                    SearchIndexEntry.document_id == document_id,
+                    SearchIndexEntry.status == SearchIndexEntryStatus.INDEXED,
+                )
+            )
+            or 0
+        )
+
+    async def _apply_active_version_delta(
+        self, session: AsyncSession, version_id: UUID, delta: int
+    ) -> None:
+        version = await session.get(SearchIndexVersion, version_id, with_for_update=True)
+        if version is None:
+            raise SearchIndexServiceError("INDEX_VERSION_NOT_FOUND", "Версия индекса не найдена")
+        version.point_count = max(0, version.point_count + delta)
+        version.eligible_chunk_count = max(0, version.eligible_chunk_count + delta)
 
     async def _event(
         self,

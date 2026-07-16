@@ -11,3 +11,12 @@ htmlcov/
 dist/
 node_modules/
 postgres-data/
+artifacts/*.json
+artifacts/*.csv
+artifacts/*.md
+backups/
+playwright-report/
+test-results/
+frontend/playwright-report/
+frontend/test-results/
+docs/final/screenshots/*.png
