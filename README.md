@@ -16,8 +16,8 @@ Python со Stack Overflow на русском. Репозиторий соде�
 - ingestion 5.1 — durable PostgreSQL queue, отдельный worker, checkpoint/events и типизированный
   Stack Exchange API client;
 - mock mode frontend сохранён и остаётся значением по умолчанию;
-- `/api/search` выполняет настоящий BM25/vector/hybrid retrieval через Qdrant; `/api/ask`
-  остаётся честным 501 до части 6.3.
+- `/api/search` выполняет настоящий BM25/vector/hybrid retrieval через Qdrant;
+- `/api/ask` и `/api/ask/stream` выполняют локальный grounded RAG через Ollama.
 
 ## Быстрый запуск frontend
 
@@ -95,6 +95,10 @@ npm run format:check
 - [Stack Exchange client](docs/stackexchange-client.md);
 - [Ingestion Этапа 5](docs/stage5-ingestion.md);
 - [Runbook полной загрузки](docs/ingestion-runbook.md);
+- [Поисковый индекс Этапа 6](docs/stage6-search-index.md);
+- [Hybrid ranking](docs/hybrid-ranking.md) и [retrieval evaluation](docs/retrieval-evaluation.md);
+- [Архитектура RAG](docs/rag-architecture.md), [SSE](docs/rag-streaming.md),
+  [безопасность](docs/rag-security.md) и [runbook Этапа 6](docs/stage6-runbook.md);
 - сохранённые задания: [Этап 4](docs/prompts/stage-4.md) и
   [полный комплект Этапа 5](docs/prompts/stage-5.md) с отдельными промтами 5.1–5.3.
 
@@ -108,10 +112,12 @@ batch-запросами до 100 ID, соблюдает `has_more`, quota, back
 
 Полный импорт 25 000 веток автоматически не запускается; см. [runbook](docs/ingestion-runbook.md).
 Поиск не имитируется через SQL. Qdrant содержит dense HNSW и native sparse BM25, hybrid
-использует weighted RRF и локальный reranker. `/api/ask` остаётся 501 до части 6.3.
-# Этап 6.1–6.2
+использует weighted RRF и локальный reranker.
+
+# Этап 6
 
 Проект получил self-hosted Qdrant, dense embeddings через Ollama, native sparse BM25,
 durable indexer и blue-green переиндексацию. HTTP mode поддерживает BM25, vector и hybrid
-поиск, weighted RRF, PostgreSQL visibility recheck и optional local reranker. RAG ещё не
-объявлен готовым: `/api/ask` остаётся 501 до 6.3.
+поиск и weighted RRF. Локальный RAG использует обязательный reranker и Ollama `qwen3:8b`,
+проверяет insufficient context до вызова LLM, stream-ит только answer content и валидирует
+citations. Модели скачиваются только явной командой `make models-pull`.

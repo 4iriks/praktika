@@ -67,7 +67,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     runtime.model = None
 
 
-app = FastAPI(title="PyAnswer Reranker", version="0.6.2", lifespan=lifespan)
+app = FastAPI(title="PyAnswer Reranker", version="0.6.3", lifespan=lifespan)
 
 
 @app.get("/health/live")

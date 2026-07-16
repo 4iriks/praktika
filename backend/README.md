@@ -172,7 +172,7 @@ Structured access log не содержит cookies, Authorization или reques
 - admin: dashboard, users, sources, jobs, audit, system/status/settings;
 - ingestion 5.2: source sync/checkpoint, read-only job events, stats и безопасные failures;
 - operations: `/api/health/live`, `/api/health/ready`;
-- placeholders: `/api/search` и `/api/ask` возвращают 501.
+- search/RAG: `/api/search`, `/api/ask`, `/api/ask/stream`.
 
 Полный flow и список routes находятся в [docs/api-contract.md](../docs/api-contract.md). OpenAPI
 доступен в development по `/api/docs`; production может отключить его.
@@ -226,13 +226,15 @@ claim, lease, heartbeat, checkpoint, cancellation и retry. Operational API и C
 `docs/stage5-ingestion.md` и `docs/ingestion-runbook.md`. Полный импорт 25 000 документов требует
 явного `CONFIRM_FULL_SYNC=YES` и автоматически не запускается.
 
-RAG ещё не настроен и `/api/ask` честно возвращает 501. Frontend mock mode остаётся
-демонстрационным режимом по умолчанию.
+Frontend mock mode остаётся демонстрационным режимом по умолчанию. HTTP mode использует
+Qdrant/reranker/Ollama; без поднятых derived services возвращается безопасный 503.
 
-## Stage 6.1–6.2
+## Stage 6
 
 Добавлены Qdrant 1.18.2, Ollama embeddings, отдельный indexer, versioned collections и
 blue-green alias switch. `/api/search` выполняет реальный BM25/vector/hybrid retrieval,
 weighted RRF и optional local reranking. PostgreSQL повторно проверяет visibility/version перед
-выдачей. Команды: `make qdrant-up`, `make embedding-model-pull`, `make indexer-up`,
-`make reranker-model-pull`, `make reranker-up`, `make search-evaluate`.
+выдачей. `/api/ask` и SSE `/api/ask/stream` выполняют grounded RAG через `qwen3:8b`, сохраняют
+response/source citations и не раскрывают thinking. Команды: `make qdrant-up`,
+`make models-pull`, `make indexer-up`, `make reranker-model-pull`, `make reranker-up`,
+`make search-evaluate`; RAG evaluation: `python -m app.scripts.evaluate_rag`.

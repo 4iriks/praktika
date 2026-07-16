@@ -166,7 +166,7 @@ export function SystemPage() {
           <section className="panel p-5">
             <h2 className="text-sm font-semibold">Системные настройки</h2>
             <p className="mt-1 text-xs text-muted">
-              Публичные ограничения сохраняются в PostgreSQL. Search/RAG HTTP endpoints до Этапа 6
+              Публичные ограничения сохраняются в PostgreSQL и применяются к реальным Search/RAG
               честно возвращают 501.
             </p>
             <div className="mt-5 grid gap-4 sm:grid-cols-2">

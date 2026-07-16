@@ -1,31 +1,25 @@
 from __future__ import annotations
 
+import json
+from collections.abc import AsyncIterator
 from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Query, Request
-from pydantic import Field
+from fastapi.responses import StreamingResponse
 
 from app.api.dependencies import DB, OptionalUser
 from app.api.errors import ApiException
 from app.core.config import get_settings
 from app.core.enums import Permission, SearchMode
-from app.schemas.base import ApiModel
+from app.db.models.identity import User
+from app.schemas.rag import AskRequest, AskResponseOut
 from app.schemas.search import SearchResponseOut
+from app.services.rag import ask_question, stream_question
 from app.services.search import SearchFilters, search_documents
-from app.services.system import get_settings_record
 
 router = APIRouter(tags=["search"])
-
-
-class AskPlaceholderRequest(ApiModel):
-    question: str = Field(min_length=1, max_length=4000)
-    mode: SearchMode
-    max_sources: int | None = Field(default=None, ge=1, le=20)
-    document_id: str | None = None
-    filters: dict[str, object] | None = None
-    page_size: int | None = None
 
 
 @router.get(
@@ -104,12 +98,95 @@ async def search(
 
 @router.post(
     "/ask",
-    summary="RAG (будет реализован на Этапе 6)",
+    summary="Получить локальный RAG-ответ",
     operation_id="askQuestion",
-    responses={501: {"description": "RAG engine is not configured"}},
+    response_model=AskResponseOut,
+    responses={
+        401: {"description": "Guest RAG is disabled"},
+        403: {"description": "Missing RAG permission or CSRF token"},
+        409: {"description": "Duplicate request is still running or terminally failed"},
+        429: {"description": "RAG rate limit exceeded"},
+        503: {"description": "Search, reranker or local LLM unavailable"},
+        504: {"description": "Local LLM timeout"},
+    },
 )
-async def ask_placeholder(payload: AskPlaceholderRequest, db: DB, user: OptionalUser) -> None:
-    settings = await get_settings_record(db)
-    if user is None and not settings.allow_guest_rag:
-        raise ApiException(401, "UNAUTHORIZED", "Для ответа ИИ требуется авторизация")
-    raise ApiException(501, "RAG_ENGINE_NOT_READY", "RAG будет подключён на Этапе 6")
+async def ask(
+    payload: AskRequest,
+    request: Request,
+    db: DB,
+    user: OptionalUser,
+) -> AskResponseOut:
+    _require_rag_permission(user)
+    request_id = str(
+        payload.client_request_id
+        or request.headers.get("X-Client-Request-ID")
+        or getattr(request.state, "request_id", "unknown")
+    )
+    return await ask_question(
+        db,
+        config=get_settings(),
+        user=user,
+        request_id=request_id,
+        client_key=request.client.host if request.client else "unknown",
+        payload=payload,
+    )
+
+
+@router.post(
+    "/ask/stream",
+    summary="Потоковый локальный RAG-ответ",
+    operation_id="streamAnswer",
+    response_class=StreamingResponse,
+    responses={
+        200: {"description": "SSE events: started/status/sources/token/metrics/done/error"},
+        403: {"description": "Missing RAG permission or CSRF token"},
+    },
+)
+async def ask_stream(
+    payload: AskRequest,
+    request: Request,
+    db: DB,
+    user: OptionalUser,
+) -> StreamingResponse:
+    _require_rag_permission(user)
+    request_id = str(
+        payload.client_request_id
+        or request.headers.get("X-Client-Request-ID")
+        or getattr(request.state, "request_id", "unknown")
+    )
+
+    async def events() -> AsyncIterator[str]:
+        async for event, data in stream_question(
+            db,
+            config=get_settings(),
+            user=user,
+            request_id=request_id,
+            client_key=request.client.host if request.client else "unknown",
+            payload=payload,
+            disconnected=request.is_disconnected,
+        ):
+            yield _sse(event, data)
+
+    return StreamingResponse(
+        events(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
+
+
+def _require_rag_permission(user: User | None) -> None:
+    if user is None:
+        return
+    permissions = {item.code for item in user.role.permissions}
+    if Permission.RAG_USE not in permissions:
+        raise ApiException(403, "FORBIDDEN", "Недостаточно прав для RAG")
+
+
+def _sse(event: str, data: dict[str, object]) -> str:
+    return (
+        f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False, separators=(',', ':'))}\n\n"
+    )

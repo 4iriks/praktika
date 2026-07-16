@@ -189,11 +189,15 @@ export interface AskRequest {
   documentId?: string;
   filters?: SearchFilters;
   pageSize?: number;
+  stream?: boolean;
+  clientRequestId?: string;
 }
 
 export type RagResponseId = string;
 
 export interface RagSource {
+  citationIndex?: number;
+  chunkId?: string;
   documentId: string;
   title: string;
   snippet: string;
@@ -201,6 +205,11 @@ export interface RagSource {
   tags: Tag[];
   score: number;
   saved: boolean;
+  sectionType?: string;
+  bm25Score?: number | null;
+  vectorScore?: number | null;
+  fusionScore?: number;
+  rerankerScore?: number | null;
 }
 
 export interface AskResponse {
@@ -212,21 +221,35 @@ export interface AskResponse {
   searchTookMs: number;
   generationTookMs: number;
   confidence: number;
+  confidenceLabel?: 'LOW' | 'MEDIUM' | 'HIGH';
+  confidenceFormulaVersion?: string;
   insufficientContext: boolean;
+  citationValidationPassed?: boolean;
+  indexVersion?: string;
+  promptVersion?: string;
+  modelVersion?: string;
+  rerankerTookMs?: number;
 }
 
 export type RagStage =
+  | 'validating'
   | 'searching'
+  | 'fusing'
   | 'merging'
   | 'reranking'
+  | 'selecting_sources'
   | 'selecting'
   | 'generating'
+  | 'validating_citations'
+  | 'saving'
+  | 'completed'
   | 'complete';
 
 export interface AskStreamOptions {
   signal?: AbortSignal;
   onChunk?: (chunk: string) => void;
   onStage?: (stage: RagStage) => void;
+  onSources?: (sources: RagSource[]) => void;
 }
 
 export interface Question {
@@ -381,6 +404,7 @@ export type ApiErrorCode =
   | 'VALIDATION_ERROR'
   | 'RATE_LIMITED'
   | 'SERVICE_UNAVAILABLE'
+  | 'GATEWAY_TIMEOUT'
   | 'SEARCH_ENGINE_NOT_READY'
   | 'RAG_ENGINE_NOT_READY'
   | 'INTERNAL_ERROR';
@@ -1055,6 +1079,25 @@ export interface PublicAccessPolicy {
   allowGuestSearch: boolean;
   allowGuestRag: boolean;
   ragSourcesLimit: number;
+}
+
+export interface RagDiagnostics {
+  provider: string;
+  model: string;
+  modelInstalled: boolean;
+  modelLoaded: boolean;
+  online: boolean;
+  contextTokens: number;
+  queueActive: number;
+  queueWaiting: number;
+  queueLimit: number;
+  promptVersion: string;
+  activeIndex?: string;
+  recentFailures: number;
+  insufficientContextRate: number;
+  citationValidationRate: number;
+  averageGenerationMs: number;
+  checkedAt: string;
 }
 
 export interface DashboardTimeSeries {

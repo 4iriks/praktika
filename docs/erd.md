@@ -161,3 +161,19 @@ erDiagram
 `search_index_entries` — идемпотентное соответствие PostgreSQL chunk → Qdrant point; vectors в
 PostgreSQL не дублируются. `search_runs` хранит безопасную telemetry поиска и связанную version;
 `search_history.request_id` обеспечивает идемпотентность browser retry.
+
+# Дополнение Этапа 6.3
+
+```mermaid
+erDiagram
+  USERS ||--o{ RAG_RESPONSES : requests
+  SEARCH_INDEX_VERSIONS ||--o{ RAG_RESPONSES : grounds
+  RAG_RESPONSES ||--o{ RAG_RESPONSE_SOURCES : cites
+  DOCUMENTS ||--o{ RAG_RESPONSE_SOURCES : sourced_from
+  DOCUMENT_CHUNKS ||--o{ RAG_RESPONSE_SOURCES : passages
+  RAG_RESPONSES ||--o{ SEARCH_HISTORY : recorded_as
+  RAG_RESPONSES ||--o{ FEEDBACK : rated_by
+```
+
+`rag_responses.request_id` уникален. Sources имеют unique `(response_id, citation_index)` и
+`(response_id, chunk_id)`. History/feedback сохраняют nullable FK для обратной совместимости.

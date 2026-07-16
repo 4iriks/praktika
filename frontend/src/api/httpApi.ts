@@ -36,6 +36,9 @@ import type {
   ManagedDocumentUpdate,
   PublicAccessPolicy,
   PublicSystemStatus,
+  RagDiagnostics,
+  RagSource,
+  RagStage,
   RegisterRequest,
   SavedDocument,
   SavedDocumentsFilters,
@@ -95,6 +98,7 @@ const apiErrorCodes = new Set([
   'VALIDATION_ERROR',
   'RATE_LIMITED',
   'SERVICE_UNAVAILABLE',
+  'GATEWAY_TIMEOUT',
   'SEARCH_ENGINE_NOT_READY',
   'RAG_ENGINE_NOT_READY',
   'INTERNAL_ERROR',
@@ -184,6 +188,139 @@ async function request<T>(path: string, init: RequestInit = {}, csrfRetried = fa
   }
   if (response.status === 204) return undefined as T;
   return (await response.json()) as T;
+}
+
+async function openEventStream(
+  path: string,
+  body: string,
+  signal: AbortSignal | undefined,
+  csrfRetried = false,
+): Promise<Response> {
+  const token = csrfToken ?? (await refreshCsrf(signal));
+  const response = await fetch(baseUrl + path, {
+    method: 'POST',
+    credentials: 'include',
+    headers: {
+      Accept: 'text/event-stream',
+      'Content-Type': 'application/json',
+      'X-CSRF-Token': token,
+    },
+    body,
+    signal,
+  });
+  if (!response.ok) {
+    const error = await responseError(response);
+    if (error.code === 'CSRF_INVALID' && !csrfRetried) {
+      csrfToken = null;
+      await refreshCsrf(signal);
+      return openEventStream(path, body, signal, true);
+    }
+    if (response.status === 401) notifyUnauthorized();
+    throw error;
+  }
+  return response;
+}
+
+const ragStages = new Set<RagStage>([
+  'validating',
+  'searching',
+  'fusing',
+  'merging',
+  'reranking',
+  'selecting_sources',
+  'selecting',
+  'generating',
+  'validating_citations',
+  'saving',
+  'completed',
+  'complete',
+]);
+
+function isRagStage(value: unknown): value is RagStage {
+  return typeof value === 'string' && ragStages.has(value as RagStage);
+}
+
+function isRagSource(value: unknown): value is RagSource {
+  return (
+    isObject(value) &&
+    typeof value.documentId === 'string' &&
+    typeof value.title === 'string' &&
+    typeof value.snippet === 'string' &&
+    typeof value.sourceUrl === 'string' &&
+    Array.isArray(value.tags) &&
+    typeof value.score === 'number' &&
+    typeof value.saved === 'boolean'
+  );
+}
+
+async function streamAsk(
+  value: AskRequest,
+  options: Parameters<ApiClient['askQuestion']>[1] = {},
+): Promise<AskResponse> {
+  const bodyValue: AskRequest = {
+    ...value,
+    stream: true,
+    clientRequestId: value.clientRequestId ?? globalThis.crypto.randomUUID(),
+  };
+  const body = JSON.stringify(bodyValue);
+  const response = await openEventStream('/ask/stream', body, options?.signal);
+  if (!response.body) {
+    return request<AskResponse>('/ask', {
+      method: 'POST',
+      body: JSON.stringify({ ...bodyValue, stream: false }),
+      signal: options?.signal,
+    });
+  }
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let completed: AskResponse | undefined;
+  const handle = (block: string): void => {
+    let event = 'message';
+    const dataLines: string[] = [];
+    for (const line of block.split(/\r?\n/)) {
+      if (line.startsWith('event:')) event = line.slice(6).trim();
+      if (line.startsWith('data:')) dataLines.push(line.slice(5).trimStart());
+    }
+    if (dataLines.length === 0) return;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(dataLines.join('\n')) as unknown;
+    } catch {
+      throw new ApiError('Сервис вернул некорректное SSE-событие.', 503, 'SERVICE_UNAVAILABLE');
+    }
+    if (!isObject(parsed)) return;
+    if (event === 'status' && isRagStage(parsed.stage)) options?.onStage?.(parsed.stage);
+    if (event === 'sources' && Array.isArray(parsed.sources)) {
+      options?.onSources?.(parsed.sources.filter(isRagSource));
+    }
+    if (event === 'token' && typeof parsed.content === 'string') {
+      options?.onChunk?.(parsed.content);
+    }
+    if (event === 'error') {
+      const message = typeof parsed.message === 'string' ? parsed.message : 'Ошибка генерации.';
+      const code =
+        typeof parsed.code === 'string' && apiErrorCodes.has(parsed.code)
+          ? (parsed.code as ConstructorParameters<typeof ApiError>[2])
+          : 'SERVICE_UNAVAILABLE';
+      throw new ApiError(message, code === 'GATEWAY_TIMEOUT' ? 504 : 503, code);
+    }
+    if (event === 'done') completed = parsed as unknown as AskResponse;
+  };
+  while (true) {
+    const read = await reader.read();
+    buffer += decoder.decode(read.value, { stream: !read.done });
+    const blocks = buffer.split(/\r?\n\r?\n/);
+    buffer = blocks.pop() ?? '';
+    blocks.forEach(handle);
+    if (read.done) break;
+  }
+  if (buffer.trim()) handle(buffer);
+  if (!completed) {
+    throw new ApiError('Поток ответа завершился без события done.', 503, 'SERVICE_UNAVAILABLE');
+  }
+  options?.onStage?.('complete');
+  return completed;
 }
 
 export function resetHttpSecurityStateForTests(): void {
@@ -337,14 +474,7 @@ export const httpApi: ApiClient = {
     return response;
   },
   async askQuestion(value: AskRequest, options = {}) {
-    const response = await request<AskResponse>('/ask', {
-      method: 'POST',
-      body: JSON.stringify(value),
-      signal: options.signal,
-    });
-    options.onStage?.('complete');
-    options.onChunk?.(response.answer);
-    return response;
+    return streamAsk(value, options);
   },
   getDocument(documentId, signal) {
     return request<Document>('/documents/' + encodeURIComponent(documentId), { signal });
@@ -596,6 +726,15 @@ export const httpApi: ApiClient = {
     return request<BackgroundJob>('/admin/indexes/cleanup', {
       method: 'POST',
       body: JSON.stringify({ dryRun, confirm }),
+    });
+  },
+  getRagDiagnostics(signal) {
+    return request<RagDiagnostics>('/admin/rag', { signal });
+  },
+  testRag(value) {
+    return request<AskResponse>('/admin/rag/test', {
+      method: 'POST',
+      body: JSON.stringify({ ...value, stream: false }),
     });
   },
   getAuditEvents(filters, signal) {

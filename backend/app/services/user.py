@@ -12,6 +12,7 @@ from app.api.errors import ApiException
 from app.core.enums import AuditAction, AuditEntityType, DocumentStatus, SearchView
 from app.db.models.content import Document, DocumentTag, Tag
 from app.db.models.identity import Feedback, SavedDocument, SearchHistory, User
+from app.db.models.operations import RagResponse
 from app.db.repositories.users import get_user_by_email, normalize_email
 from app.schemas.auth import UpdateProfileRequest, UserOut, UserStatsOut
 from app.schemas.base import pagination
@@ -288,9 +289,24 @@ def feedback_schema(item: Feedback) -> FeedbackOut:
 
 async def upsert_feedback(db: AsyncSession, user: User, payload: FeedbackRequest) -> FeedbackOut:
     values = payload.model_dump()
+    rag_response_id: UUID | None = None
+    try:
+        parsed_response_id = UUID(payload.response_id)
+    except ValueError:
+        parsed_response_id = None
+    if parsed_response_id is not None:
+        response_exists = await db.scalar(
+            select(RagResponse.id).where(
+                RagResponse.id == parsed_response_id,
+                RagResponse.status == "COMPLETED",
+            )
+        )
+        if response_exists is None:
+            raise ApiException(404, "NOT_FOUND", "RAG-ответ не найден")
+        rag_response_id = parsed_response_id
     statement = (
         insert(Feedback)
-        .values(user_id=user.id, **values)
+        .values(user_id=user.id, rag_response_id=rag_response_id, **values)
         .on_conflict_do_update(
             index_elements=["user_id", "response_id"],
             set_={
@@ -298,6 +314,7 @@ async def upsert_feedback(db: AsyncSession, user: User, payload: FeedbackRequest
                 "reason": values["reason"],
                 "question": values["question"],
                 "comment": values["comment"],
+                "rag_response_id": rag_response_id,
                 "updated_at": func.now(),
             },
         )

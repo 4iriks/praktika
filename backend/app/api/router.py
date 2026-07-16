@@ -5,6 +5,7 @@ from app.api.routes import (
     admin_indexes,
     admin_ingestion,
     admin_jobs,
+    admin_rag,
     admin_sources,
     admin_system,
     admin_users,
@@ -37,6 +38,7 @@ api_router.include_router(admin_users.router)
 api_router.include_router(admin_sources.router)
 api_router.include_router(admin_ingestion.router)
 api_router.include_router(admin_indexes.router)
+api_router.include_router(admin_rag.router)
 api_router.include_router(admin_jobs.router)
 api_router.include_router(admin_audit.router)
 api_router.include_router(admin_system.router)

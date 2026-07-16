@@ -3,6 +3,7 @@ import {
   Activity,
   ArrowLeft,
   BookOpenCheck,
+  BrainCircuit,
   Boxes,
   BriefcaseBusiness,
   Database,
@@ -67,6 +68,7 @@ const links: ManagementLink[] = [
     icon: ShieldCheck,
     permission: 'SEARCH_INDEX_VIEW',
   },
+  { to: '/admin/rag', label: 'Локальный RAG', icon: BrainCircuit, permission: 'SYSTEM_VIEW' },
   { to: '/admin/audit', label: 'Аудит', icon: FileClock, permission: 'AUDIT_VIEW' },
   { to: '/admin/system', label: 'Система', icon: ServerCog, permission: 'SYSTEM_VIEW' },
 ];
@@ -229,6 +231,7 @@ function breadcrumb(pathname: string): string {
     '/admin/audit': 'Администратор / Аудит',
     '/admin/system': 'Администратор / Система',
     '/admin/indexes': 'Администратор / Поисковый индекс',
+    '/admin/rag': 'Администратор / Локальный RAG',
   };
   if (pathname.startsWith('/editor/documents/')) return 'Редактор / Документы / Карточка';
   return labels[pathname] ?? 'PyAnswer / Управление';

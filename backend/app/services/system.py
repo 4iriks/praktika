@@ -26,6 +26,7 @@ from app.db.models.operations import (
     WorkerInstance,
 )
 from app.integrations.embeddings import OllamaEmbeddingProvider
+from app.integrations.llm import OllamaLlmProvider
 from app.integrations.qdrant import QdrantIndexClient
 from app.integrations.reranker import RerankerClient
 from app.schemas.content import PublicAccessPolicyOut
@@ -195,14 +196,17 @@ async def system_status(db: AsyncSession) -> SystemStatusOut:
     qdrant_client = QdrantIndexClient(config)
     embedding_provider = OllamaEmbeddingProvider(config)
     reranker_client = RerankerClient(config)
+    llm_provider = OllamaLlmProvider(config)
     try:
         qdrant_health = await qdrant_client.health()
         embedding_health = await embedding_provider.health()
         reranker_health = await reranker_client.health()
+        llm_health = await llm_provider.health()
     finally:
         await qdrant_client.close()
         await embedding_provider.close()
         await reranker_client.close()
+        await llm_provider.close()
     services.extend(
         [
             SystemServiceOut(
@@ -235,6 +239,17 @@ async def system_status(db: AsyncSession) -> SystemStatusOut:
                 version=config.embedding_model,
                 last_check_at=now,
                 message=embedding_health.message,
+            ),
+            SystemServiceOut(
+                id="llm",
+                name="Local LLM",
+                status=(
+                    "ONLINE" if llm_health.online and llm_health.model_installed else "OFFLINE"
+                ),
+                latency_ms=0,
+                version=config.llm_model,
+                last_check_at=now,
+                message=llm_health.message,
             ),
         ]
     )

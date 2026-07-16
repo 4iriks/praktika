@@ -77,6 +77,19 @@ class SearchIndexEntryStatus(StrEnum):
     REMOVED = "REMOVED"
 
 
+class RagResponseStatus(StrEnum):
+    GENERATING = "GENERATING"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+    CANCELLED = "CANCELLED"
+
+
+class ConfidenceLabel(StrEnum):
+    LOW = "LOW"
+    MEDIUM = "MEDIUM"
+    HIGH = "HIGH"
+
+
 class ProcessingStatus(StrEnum):
     RAW = "RAW"
     CLEANING = "CLEANING"

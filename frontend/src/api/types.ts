@@ -37,6 +37,7 @@ import type {
   IngestionStats,
   PublicAccessPolicy,
   PublicSystemStatus,
+  RagDiagnostics,
   RegisterRequest,
   SavedDocument,
   SavedDocumentsFilters,
@@ -154,6 +155,8 @@ export interface ApiClient {
   startSearchIndexFullReindex(): Promise<BackgroundJob>;
   validateSearchIndex(indexVersionId: string): Promise<BackgroundJob>;
   cleanupSearchIndexes(dryRun: boolean, confirm?: boolean): Promise<BackgroundJob>;
+  getRagDiagnostics(signal?: AbortSignal): Promise<RagDiagnostics>;
+  testRag(request: AskRequest): Promise<AskResponse>;
 
   getAuditEvents(filters: AuditFilters, signal?: AbortSignal): Promise<AuditEventsResponse>;
   getAuditEvent(eventId: string, signal?: AbortSignal): Promise<AuditEvent>;

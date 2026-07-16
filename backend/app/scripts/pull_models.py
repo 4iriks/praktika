@@ -23,9 +23,15 @@ async def pull(model: str) -> None:
 
 async def run() -> None:
     parser = argparse.ArgumentParser(description="Явно загрузить локальные модели PyAnswer")
-    parser.add_argument("--embedding-only", action="store_true")
-    parser.parse_args()
-    await pull(get_settings().embedding_model)
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument("--embedding-only", action="store_true")
+    group.add_argument("--llm-only", action="store_true")
+    args = parser.parse_args()
+    settings = get_settings()
+    if not args.llm_only:
+        await pull(settings.embedding_model)
+    if not args.embedding_only:
+        await pull(settings.llm_model)
 
 
 if __name__ == "__main__":

@@ -48,7 +48,7 @@ async def test_ready_returns_503_when_database_is_unavailable(client: AsyncClien
     assert response.json()["error"]["code"] == "SERVICE_UNAVAILABLE"
 
 
-async def test_search_requires_active_index_while_rag_remains_honest_501(
+async def test_search_and_rag_require_active_index(
     client: AsyncClient,
 ) -> None:
     search = await client.get("/api/search", params={"q": "asyncio"})
@@ -61,8 +61,8 @@ async def test_search_requires_active_index_while_rag_remains_honest_501(
         json={"question": "Что такое asyncio?", "mode": "hybrid"},
         headers={"X-CSRF-Token": token},
     )
-    assert ask.status_code == 501
-    assert ask.json()["error"]["code"] == "RAG_ENGINE_NOT_READY"
+    assert ask.status_code == 503
+    assert ask.json()["error"]["code"] == "SERVICE_UNAVAILABLE"
 
 
 async def test_guest_search_and_rag_settings_are_enforced(client: AsyncClient) -> None:
@@ -105,6 +105,7 @@ async def test_openapi_has_required_routes_operation_ids_and_camel_case(
         "/api/admin/system/settings",
         "/api/search",
         "/api/ask",
+        "/api/ask/stream",
     }
     assert required <= schema["paths"].keys()
     assert schema["paths"]["/api/auth/login"]["post"]["operationId"] == "login"

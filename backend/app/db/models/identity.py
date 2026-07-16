@@ -157,6 +157,9 @@ class SearchHistory(Base, UUIDPrimaryKeyMixin):
 
     user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     request_id: Mapped[str | None] = mapped_column(String(80), unique=True, index=True)
+    response_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("rag_responses.id", ondelete="SET NULL"), index=True
+    )
     query: Mapped[str] = mapped_column(String(1000))
     view: Mapped[str] = mapped_column(String(16))
     mode: Mapped[str] = mapped_column(String(16))
@@ -197,6 +200,9 @@ class Feedback(Base, UUIDPrimaryKeyMixin):
 
     user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     response_id: Mapped[str] = mapped_column(String(120))
+    rag_response_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("rag_responses.id", ondelete="CASCADE"), index=True
+    )
     value: Mapped[str] = mapped_column(String(16))
     reason: Mapped[str | None] = mapped_column(String(40))
     question: Mapped[str] = mapped_column(String(1000))

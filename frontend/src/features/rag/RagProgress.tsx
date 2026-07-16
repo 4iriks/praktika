@@ -2,22 +2,27 @@ import { Check, Circle, LoaderCircle } from 'lucide-react';
 import type { RagStage } from '../../types';
 import { cn } from '../../utils/cn';
 
-const stages: Array<{ value: Exclude<RagStage, 'complete'>; label: string }> = [
+const stages: Array<{ value: RagStage; label: string }> = [
+  { value: 'validating', label: 'Проверка' },
   { value: 'searching', label: 'Поиск кандидатов' },
-  { value: 'merging', label: 'Объединение BM25 и HNSW' },
+  { value: 'fusing', label: 'Гибридное объединение' },
   { value: 'reranking', label: 'Переранжирование' },
-  { value: 'selecting', label: 'Выбор источников' },
+  { value: 'selecting_sources', label: 'Выбор источников' },
   { value: 'generating', label: 'Генерация ответа' },
+  { value: 'validating_citations', label: 'Проверка цитат' },
+  { value: 'saving', label: 'Сохранение' },
 ];
 
 export function RagProgress({ stage }: { stage: RagStage }) {
   const activeIndex =
-    stage === 'complete' ? stages.length : stages.findIndex((item) => item.value === stage);
+    stage === 'complete' || stage === 'completed'
+      ? stages.length
+      : stages.findIndex((item) => item.value === stage);
 
   return (
-    <div className="grid gap-2 border-b border-line bg-elevated/25 px-4 py-3 sm:grid-cols-5 sm:px-6">
+    <div className="grid gap-2 border-b border-line bg-elevated/25 px-4 py-3 sm:grid-cols-4 sm:px-6 xl:grid-cols-8">
       {stages.map((item, index) => {
-        const complete = index < activeIndex || stage === 'complete';
+        const complete = index < activeIndex || stage === 'complete' || stage === 'completed';
         const active = index === activeIndex;
         return (
           <div key={item.value} className="flex items-center gap-2">

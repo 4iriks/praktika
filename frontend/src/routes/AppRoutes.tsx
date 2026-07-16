@@ -77,6 +77,11 @@ const SystemPage = lazy(() =>
 const IndexesPage = lazy(() =>
   import('../pages/admin/IndexesPage').then((module) => ({ default: module.IndexesPage })),
 );
+const RagDiagnosticsPage = lazy(() =>
+  import('../pages/admin/RagDiagnosticsPage').then((module) => ({
+    default: module.RagDiagnosticsPage,
+  })),
+);
 
 export function AppRoutes() {
   return (
@@ -144,6 +149,7 @@ export function AppRoutes() {
           <Route path="/admin/audit" element={<AuditPage />} />
           <Route path="/admin/system" element={<SystemPage />} />
           <Route path="/admin/indexes" element={<IndexesPage />} />
+          <Route path="/admin/rag" element={<RagDiagnosticsPage />} />
         </Route>
         <Route path="*" element={<NotFoundPage />} />
       </Routes>

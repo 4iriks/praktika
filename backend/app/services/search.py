@@ -133,6 +133,7 @@ async def search_documents(
     page_size: int,
     apply_reranker: bool = True,
     filters: SearchFilters,
+    persist_history: bool = True,
     embeddings: EmbeddingProvider | None = None,
     sparse: SparseEmbeddingProvider | None = None,
     qdrant: QdrantIndexClient | None = None,
@@ -300,6 +301,7 @@ async def search_documents(
         reranker_applied=reranker_applied,
         index_version=active,
         timings=timings,
+        persist_history=persist_history,
     )
     return SearchResponseOut(
         results=results,
@@ -542,6 +544,7 @@ async def _persist_search(
     reranker_applied: bool,
     index_version: SearchIndexVersion,
     timings: SearchTimingsOut,
+    persist_history: bool = True,
 ) -> None:
     values = {
         "request_id": request_id,
@@ -567,7 +570,7 @@ async def _persist_search(
     await db.execute(
         insert(SearchRun).values(**values).on_conflict_do_nothing(index_elements=["request_id"])
     )
-    if user is not None:
+    if user is not None and persist_history:
         await db.execute(
             insert(SearchHistory)
             .values(

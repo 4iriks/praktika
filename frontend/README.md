@@ -3,7 +3,7 @@
 При `VITE_USE_MOCKS=false` страница поиска использует настоящий FastAPI `/api/search` с режимами
 BM25, vector и hybrid, отменой через AbortSignal, nullable component scores, reranker fallback и
 index/timing diagnostics. При `VITE_USE_MOCKS=true` прежний полностью локальный demo остаётся без
-изменений. RAG в HTTP mode будет подключён в части 6.3.
+изменений. RAG в HTTP mode использует credentialed POST SSE через FastAPI.
 
 PyAnswer — локальная интеллектуальная поисковая система по синтетической русскоязычной базе
 вопросов и ответов о Python. Текущий frontend объединяет три законченных контура:
@@ -274,8 +274,8 @@ Admin endpoints:
 FastAPI Этапа 4 реализует эти JSON-контракты, единый error envelope, серверную permission matrix,
 Argon2id, audit в PostgreSQL, HttpOnly session cookie и credentialed CORS. Для HTTP-режима нужно
 установить `VITE_USE_MOCKS=false`, оставить `VITE_API_BASE_URL=http://localhost:8000/api` и
-пересобрать frontend. `/api/search` и `/api/ask` до Этапа 6 возвращают честный 501, поэтому
-демонстрационный поиск по умолчанию остаётся в mock-режиме.
+пересобрать frontend. `/api/search`, `/api/ask` и `/api/ask/stream` используют backend; mock
+режим по умолчанию остаётся независимой демонстрацией.
 
 Браузер никогда не вызывает Ollama напрямую.
 
@@ -310,6 +310,8 @@ Multi-stage image собирает Vite bundle и отдаёт его через
 Router fallback, immutable assets cache и `/healthz`. Корневой `compose.yaml` Этапа 4 добавляет
 PostgreSQL и backend; frontend image остаётся самостоятельным и не включён в compose этого этапа.
 
-# Stage 6.1
+# Stage 6
 
-В ADMIN-контуре доступна `/admin/indexes`: фактический Qdrant/model/indexer status, версии, full rebuild, validation и безопасный cleanup. Пользовательский HTTP search подключается в 6.2; mock mode сохранён.
+В ADMIN-контуре доступны `/admin/indexes` и `/admin/rag`. HTTP search поддерживает BM25/vector/
+hybrid, а Ask — status/source/token SSE, cancel, validated citations, feedback и history. Thinking
+не отображается, raw HTML не рендерится, mock mode сохранён.

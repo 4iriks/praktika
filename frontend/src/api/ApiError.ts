@@ -9,6 +9,7 @@ function codeForStatus(status: number): ApiErrorCode {
   if (status === 422) return 'VALIDATION_ERROR';
   if (status === 429) return 'RATE_LIMITED';
   if (status === 503) return 'SERVICE_UNAVAILABLE';
+  if (status === 504) return 'GATEWAY_TIMEOUT';
   return 'INTERNAL_ERROR';
 }
 

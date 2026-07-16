@@ -9,8 +9,9 @@ COMPOSE ?= $(shell if docker compose version >/dev/null 2>&1; then \
 .PHONY: backend-up backend-test backend-lint backend-migrate backend-seed backend-logs \
 	worker-up worker-logs worker-health sync-smoke sync-incremental ingestion-report \
 	sync-full-confirmed qdrant-up indexer-up index-logs index-status index-full \
-	models-pull embedding-model-pull \
-	reranker-up reranker-logs reranker-model-pull search-evaluate
+	models-pull embedding-model-pull llm-model-pull ollama-status ollama-models \
+	reranker-up reranker-logs reranker-model-pull search-evaluate rag-evaluate \
+	local-model-smoke
 
 backend-up:
 	$(COMPOSE) up -d postgres backend
@@ -67,8 +68,20 @@ index-status:
 index-full:
 	@echo "Полная переиндексация запускается из /admin/indexes с явным подтверждением."
 
-models-pull embedding-model-pull:
+embedding-model-pull:
 	$(COMPOSE) run --rm backend python -m app.scripts.pull_models --embedding-only
+
+models-pull:
+	$(COMPOSE) run --rm backend python -m app.scripts.pull_models
+
+llm-model-pull:
+	$(COMPOSE) run --rm backend python -m app.scripts.pull_models --llm-only
+
+ollama-status:
+	$(COMPOSE) exec ollama ollama ps
+
+ollama-models:
+	$(COMPOSE) exec ollama ollama list
 
 reranker-up:
 	$(COMPOSE) up -d reranker
@@ -81,6 +94,15 @@ reranker-model-pull:
 
 search-evaluate:
 	$(COMPOSE) run --rm backend python -m app.scripts.evaluate_retrieval
+
+rag-evaluate:
+	$(COMPOSE) run --rm backend python -m app.scripts.evaluate_rag
+
+local-model-smoke:
+	@test "$(RUN_LIVE_LOCAL_MODELS)" = "1" || \
+		(echo "Live model smoke не запущен: RUN_LIVE_LOCAL_MODELS=1" && exit 1)
+	$(COMPOSE) run --rm -e RUN_LIVE_LOCAL_MODELS=1 backend \
+		python -m app.scripts.live_local_models_smoke
 
 sync-full-confirmed:
 	@test "$(CONFIRM_FULL_SYNC)" = "YES" || \

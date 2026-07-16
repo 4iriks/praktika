@@ -310,6 +310,8 @@ async function askQuestion(
   if (!policy.allowGuestRag && !mockRepository.getOptionalActor()) {
     throw new ApiError('Для ответа ИИ необходимо войти.', 401, 'UNAUTHORIZED');
   }
+  options.onStage?.('validating');
+  await delay(20, options.signal);
   options.onStage?.('searching');
   await delay(90, options.signal);
   const search = await searchDocuments(
@@ -323,11 +325,11 @@ async function askQuestion(
     },
     options.signal,
   );
-  options.onStage?.('merging');
+  options.onStage?.('fusing');
   await delay(65, options.signal);
   options.onStage?.('reranking');
   await delay(65, options.signal);
-  options.onStage?.('selecting');
+  options.onStage?.('selecting_sources');
   await delay(55, options.signal);
 
   const selectedResults = search.results.slice(
@@ -341,6 +343,7 @@ async function askQuestion(
         .find((document) => document.id === result.documentId),
     )
     .filter((document): document is Document => Boolean(document));
+  options.onSources?.(selectedResults.map(sourceFromResult));
   const insufficientContext = selectedDocuments.length === 0;
   const answer = insufficientContext
     ? 'В базе не найдено достаточно информации для надёжного ответа. Попробуйте уточнить запрос.'
@@ -352,6 +355,10 @@ async function askQuestion(
     await delay(14, options.signal);
     options.onChunk?.(chunk);
   }
+  options.onStage?.('validating_citations');
+  await delay(20, options.signal);
+  options.onStage?.('saving');
+  await delay(20, options.signal);
   options.onStage?.('complete');
 
   const searchTookMs = 186 + tokenize(request.question).length * 8;
@@ -798,6 +805,30 @@ export const mockApi: ApiClient = {
   async cleanupSearchIndexes() {
     await initializeData();
     return mockManagementRepository.startFullReindex();
+  },
+  async getRagDiagnostics(signal) {
+    await delay(80, signal);
+    return {
+      provider: 'ollama',
+      model: 'qwen3:8b',
+      modelInstalled: false,
+      modelLoaded: false,
+      online: false,
+      contextTokens: 8192,
+      queueActive: 0,
+      queueWaiting: 0,
+      queueLimit: 4,
+      promptVersion: '6.3.1',
+      activeIndex: mockIndexVersion.schemaHash,
+      recentFailures: 0,
+      insufficientContextRate: 0,
+      citationValidationRate: 0,
+      averageGenerationMs: 0,
+      checkedAt: new Date().toISOString(),
+    };
+  },
+  testRag(value) {
+    return askQuestion(value);
   },
   async getAuditEvents(filters, signal) {
     await initializeData();

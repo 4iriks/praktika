@@ -541,6 +541,98 @@ class SearchRun(Base, UUIDPrimaryKeyMixin):
     )
 
 
+class RagResponse(Base, UUIDPrimaryKeyMixin):
+    __tablename__ = "rag_responses"
+
+    request_id: Mapped[str] = mapped_column(String(80), unique=True, index=True)
+    user_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), index=True
+    )
+    query: Mapped[str] = mapped_column(String(1000))
+    search_mode: Mapped[str] = mapped_column(String(16), index=True)
+    answer_text: Mapped[str] = mapped_column(Text, default="")
+    model: Mapped[str] = mapped_column(String(200))
+    model_version: Mapped[str | None] = mapped_column(String(200))
+    prompt_version: Mapped[str] = mapped_column(String(40))
+    prompt_hash: Mapped[str] = mapped_column(String(64), index=True)
+    index_version_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("search_index_versions.id", ondelete="SET NULL"), index=True
+    )
+    confidence: Mapped[float] = mapped_column(Float, default=0)
+    confidence_label: Mapped[str] = mapped_column(String(16))
+    insufficient_context: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    citation_validation_passed: Mapped[bool] = mapped_column(Boolean, default=False)
+    source_count: Mapped[int] = mapped_column(Integer, default=0)
+    search_ms: Mapped[int] = mapped_column(Integer, default=0)
+    reranker_ms: Mapped[int] = mapped_column(Integer, default=0)
+    generation_ms: Mapped[int] = mapped_column(Integer, default=0)
+    total_ms: Mapped[int] = mapped_column(Integer, default=0)
+    prompt_tokens: Mapped[int | None] = mapped_column(Integer)
+    output_tokens: Mapped[int | None] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(16), index=True)
+    error_code: Mapped[str | None] = mapped_column(String(80))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), index=True
+    )
+
+    sources: Mapped[list[RagResponseSource]] = relationship(
+        back_populates="response", cascade="all, delete-orphan", lazy="selectin"
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "search_mode IN ('bm25','vector','hybrid')", name="rag_response_search_mode_values"
+        ),
+        CheckConstraint(
+            "status IN ('GENERATING','COMPLETED','FAILED','CANCELLED')",
+            name="rag_response_status_values",
+        ),
+        CheckConstraint(
+            "confidence_label IN ('LOW','MEDIUM','HIGH')",
+            name="rag_response_confidence_label_values",
+        ),
+        CheckConstraint("confidence BETWEEN 0 AND 1", name="rag_response_confidence_range"),
+        CheckConstraint("source_count >= 0", name="rag_response_source_count_non_negative"),
+        CheckConstraint(
+            "search_ms >= 0 AND reranker_ms >= 0 AND generation_ms >= 0 AND total_ms >= 0",
+            name="rag_response_timings_non_negative",
+        ),
+    )
+
+
+class RagResponseSource(Base, UUIDPrimaryKeyMixin):
+    __tablename__ = "rag_response_sources"
+
+    response_id: Mapped[UUID] = mapped_column(
+        ForeignKey("rag_responses.id", ondelete="CASCADE"), index=True
+    )
+    chunk_id: Mapped[UUID] = mapped_column(
+        ForeignKey("document_chunks.id", ondelete="RESTRICT"), index=True
+    )
+    document_id: Mapped[UUID] = mapped_column(
+        ForeignKey("documents.id", ondelete="RESTRICT"), index=True
+    )
+    citation_index: Mapped[int] = mapped_column(Integer)
+    rank: Mapped[int] = mapped_column(Integer)
+    bm25_score: Mapped[float | None] = mapped_column(Float)
+    vector_score: Mapped[float | None] = mapped_column(Float)
+    fusion_score: Mapped[float] = mapped_column(Float)
+    reranker_score: Mapped[float | None] = mapped_column(Float)
+    source_url: Mapped[str] = mapped_column(String(2000))
+    title: Mapped[str] = mapped_column(String(500))
+    passage_hash: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    response: Mapped[RagResponse] = relationship(back_populates="sources")
+
+    __table_args__ = (
+        UniqueConstraint("response_id", "citation_index", name="uq_rag_sources_response_citation"),
+        UniqueConstraint("response_id", "chunk_id", name="uq_rag_sources_response_chunk"),
+        CheckConstraint("citation_index >= 1", name="rag_source_citation_positive"),
+        CheckConstraint("rank >= 1", name="rag_source_rank_positive"),
+    )
+
+
 class AuditEvent(Base, UUIDPrimaryKeyMixin):
     __tablename__ = "audit_events"
 

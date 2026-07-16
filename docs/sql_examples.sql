@@ -174,3 +174,24 @@ FROM search_runs
 WHERE created_at >= now() - interval '1 day' AND status = 'COMPLETED'
 GROUP BY mode
 ORDER BY mode;
+
+-- 22. Grounded RAG: latency, insufficient context и citation validity за сутки.
+SELECT model, COUNT(*) AS responses,
+       ROUND(AVG(total_ms), 1) AS avg_total_ms,
+       ROUND(100.0 * COUNT(*) FILTER (WHERE insufficient_context) / COUNT(*), 2)
+         AS insufficient_percent,
+       ROUND(100.0 * COUNT(*) FILTER (WHERE citation_validation_passed) / COUNT(*), 2)
+         AS valid_citations_percent
+FROM rag_responses
+WHERE created_at >= now() - interval '1 day' AND status = 'COMPLETED'
+GROUP BY model
+ORDER BY responses DESC, model;
+
+-- 23. Citation mapping конкретного RAG response.
+SELECT source.citation_index, source.rank, source.title, source.source_url,
+       source.reranker_score, document.external_id, chunk.ordinal
+FROM rag_response_sources AS source
+JOIN documents AS document ON document.id = source.document_id
+JOIN document_chunks AS chunk ON chunk.id = source.chunk_id
+WHERE source.response_id = :response_id
+ORDER BY source.citation_index;

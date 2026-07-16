@@ -9,7 +9,7 @@ Base URL: `/api`. JSON fields используют camelCase, Python и PostgreS
 reranker обозначается `null`. Ответ содержит matched chunks, index version, timings и
 `totalIsExact=false`, потому что pagination ограничена candidate window. Недоступность
 Qdrant/model/обязательного reranker возвращает 503 в общем error envelope. `/api/ask` остаётся
-501 до 6.3.
+Stage 6 реализует настоящий search и локальный RAG.
 
 Подэтапы 5.1–5.2 расширяют существующий контракт operational-полями worker и ingestion. Старые
 auth/user/editor/admin методы сохраняют обратную совместимость.
@@ -143,8 +143,9 @@ API key, raw wrapper и response body не возвращаются.
 - `GET /health/live` — без DB query;
 - `GET /health/ready` — PostgreSQL readiness;
 - `GET /status`, `GET /system/public-policy`;
-- `GET /search` — HTTP 501 до Этапа 6;
-- `POST /ask` — HTTP 501 до Этапа 6.
+- `GET /search` — BM25/vector/hybrid Qdrant retrieval;
+- `POST /ask` — JSON local RAG;
+- `POST /ask/stream` — credentialed CSRF-protected SSE RAG.
 
 Worker не меняет контракт search/ask: ingestion и поисковая индексация являются разными
 этапами. `SOURCE_SYNC` на 5.2 не устанавливает BM25/vector status в `READY`.
@@ -157,4 +158,12 @@ HTTP adapter сообщает AuthProvider о 401. Provider переводит a
 scenario.
 # Search index API (Stage 6.1)
 
-ADMIN endpoints: `GET /api/admin/indexes`, `/{id}`, `/active`, `/stats`; `POST /full-reindex`, `/{id}/validate`, `/cleanup`. Mutations используют текущие HttpOnly session + CSRF и возвращают существующий `BackgroundJob` contract. USER/EDITOR получают 403. Search/ask до 6.2/6.3 по-прежнему возвращают 501.
+ADMIN endpoints: `GET /api/admin/indexes`, `/{id}`, `/active`, `/stats`; `POST /full-reindex`, `/{id}/validate`, `/cleanup`. Mutations используют текущие HttpOnly session + CSRF и возвращают существующий `BackgroundJob` contract. USER/EDITOR получают 403.
+
+# Local RAG API (Stage 6.3)
+
+`POST /api/ask` возвращает JSON `AskResponse`: response ID, answer, sources, model/index/prompt
+versions, confidence, insufficient-context, citation validation и timings. `POST /api/ask/stream`
+возвращает SSE events `started`, `status`, `sources`, `token`, `heartbeat`, `metrics`, `done`,
+`error`. Источники приходят до tokens; `thinking` отсутствует. `clientRequestId` идемпотентен.
+ADMIN diagnostics: `GET /api/admin/rag`, `POST /api/admin/rag/test`.

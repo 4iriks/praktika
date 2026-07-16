@@ -59,6 +59,7 @@ export function RagAnswer({ question, mode, filters, pageSize, onResponse }: Rag
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const currentResponseId = stream.data?.responseId ?? '';
+  const visibleSources = stream.data?.sources ?? stream.sources;
   const feedback = useQuery({
     queryKey: queryKeys.feedback.response(currentResponseId),
     queryFn: ({ signal }) => api.getFeedbackForResponse(currentResponseId, signal),
@@ -118,6 +119,12 @@ export function RagAnswer({ question, mode, filters, pageSize, onResponse }: Rag
     document.getElementById('rag-sources')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
+  const scrollToCitation = (citation: number) => {
+    document
+      .getElementById(`source-${citation}`)
+      ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  };
+
   if (stream.error) return <ErrorState onRetry={() => setRetryKey((key) => key + 1)} />;
 
   return (
@@ -151,6 +158,21 @@ export function RagAnswer({ question, mode, filters, pageSize, onResponse }: Rag
           ) : (
             <div className={stream.isLoading ? 'stream-cursor' : undefined}>
               <MarkdownContent>{stream.streamedAnswer}</MarkdownContent>
+              {visibleSources.length > 0 ? (
+                <nav className="mt-3 flex flex-wrap gap-2" aria-label="Цитаты ответа">
+                  {visibleSources.map((source, index) => (
+                    <button
+                      key={source.documentId}
+                      type="button"
+                      className="rounded-md border border-info/30 bg-info/5 px-2 py-1 font-mono text-xs text-info hover:bg-info/10"
+                      onClick={() => scrollToCitation(index + 1)}
+                      aria-label={`Открыть источник ${index + 1}: ${source.title}`}
+                    >
+                      Источник {index + 1}
+                    </button>
+                  ))}
+                </nav>
+              ) : null}
             </div>
           )
         ) : (
@@ -223,20 +245,29 @@ export function RagAnswer({ question, mode, filters, pageSize, onResponse }: Rag
               </Button>
             </div>
           </>
+        ) : stream.isLoading ? (
+          <div className="mt-5">
+            <Button size="sm" variant="danger" onClick={stream.cancel}>
+              <X className="size-3.5" aria-hidden="true" />
+              Отменить генерацию
+            </Button>
+          </div>
         ) : null}
       </div>
 
-      {stream.data && stream.data.sources.length > 0 ? (
+      {visibleSources.length > 0 ? (
         <section id="rag-sources" className="border-t border-line bg-elevated/20 px-4 py-5 sm:px-6">
           <h2 className="technical-label">Использованные источники</h2>
           <div className="mt-3 grid gap-3 lg:grid-cols-2">
-            {stream.data.sources.map((source, index) => (
+            {visibleSources.map((source, index) => (
               <RagSourceCard key={source.documentId} source={source} index={index} />
             ))}
           </div>
           <p className="mt-4 flex items-center gap-2 text-[11px] text-muted">
             <CheckCircle2 className="size-3.5 text-success" aria-hidden="true" />
-            Цитаты привязаны только к найденным документам.
+            {stream.data?.citationValidationPassed === false
+              ? 'Часть ссылок модели не прошла проверку.'
+              : 'Цитаты привязаны только к найденным документам.'}
           </p>
         </section>
       ) : null}

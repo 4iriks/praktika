@@ -19,7 +19,7 @@ class Settings(BaseSettings):
         default="development", alias="APP_ENV"
     )
     app_name: str = Field(default="PyAnswer API", alias="APP_NAME")
-    app_version: str = Field(default="0.6.2", alias="APP_VERSION")
+    app_version: str = Field(default="0.6.3", alias="APP_VERSION")
     debug: bool = Field(default=False, alias="DEBUG")
     database_url: str = Field(
         default="postgresql+asyncpg://pyanswer:pyanswer@localhost:5432/pyanswer",
@@ -274,6 +274,53 @@ class Settings(BaseSettings):
         default=5, gt=0, le=60, alias="RERANKER_QUEUE_TIMEOUT_SECONDS"
     )
 
+    llm_provider: Literal["ollama"] = Field(default="ollama", alias="LLM_PROVIDER")
+    llm_model: str = Field(default="qwen3:8b", min_length=1, alias="LLM_MODEL")
+    llm_base_url: str = Field(default="http://localhost:11434", alias="LLM_BASE_URL")
+    llm_num_ctx: int = Field(default=8192, ge=1024, le=131072, alias="LLM_NUM_CTX")
+    llm_temperature: float = Field(default=0.1, ge=0, le=2, alias="LLM_TEMPERATURE")
+    llm_top_p: float = Field(default=0.9, gt=0, le=1, alias="LLM_TOP_P")
+    llm_max_output_tokens: int = Field(default=1200, ge=64, le=8192, alias="LLM_MAX_OUTPUT_TOKENS")
+    llm_timeout_seconds: float = Field(default=180, gt=0, le=1800, alias="LLM_TIMEOUT_SECONDS")
+    llm_keep_alive: str = Field(default="5m", alias="LLM_KEEP_ALIVE")
+    llm_max_concurrent_requests: int = Field(
+        default=1, ge=1, le=16, alias="LLM_MAX_CONCURRENT_REQUESTS"
+    )
+    llm_queue_limit: int = Field(default=4, ge=0, le=100, alias="LLM_QUEUE_LIMIT")
+    llm_queue_timeout_seconds: float = Field(
+        default=15, gt=0, le=300, alias="LLM_QUEUE_TIMEOUT_SECONDS"
+    )
+    llm_think: bool = Field(default=False, alias="LLM_THINK")
+
+    rag_search_mode: Literal["hybrid"] = Field(default="hybrid", alias="RAG_SEARCH_MODE")
+    rag_candidate_limit: int = Field(default=80, ge=5, le=500, alias="RAG_CANDIDATE_LIMIT")
+    rag_rerank_limit: int = Field(default=30, ge=1, le=100, alias="RAG_RERANK_LIMIT")
+    rag_sources_limit: int = Field(default=5, ge=1, le=20, alias="RAG_SOURCES_LIMIT")
+    rag_max_chunks_per_document: int = Field(
+        default=2, ge=1, le=5, alias="RAG_MAX_CHUNKS_PER_DOCUMENT"
+    )
+    rag_context_token_budget: int = Field(
+        default=5000, ge=256, le=65536, alias="RAG_CONTEXT_TOKEN_BUDGET"
+    )
+    rag_min_reranker_score: float = Field(default=0.25, ge=0, le=1, alias="RAG_MIN_RERANKER_SCORE")
+    rag_min_source_count: int = Field(default=1, ge=1, le=20, alias="RAG_MIN_SOURCE_COUNT")
+    rag_max_source_count: int = Field(default=5, ge=1, le=20, alias="RAG_MAX_SOURCE_COUNT")
+    rag_min_context_tokens: int = Field(default=40, ge=1, le=4096, alias="RAG_MIN_CONTEXT_TOKENS")
+    rag_reranker_required: bool = Field(default=True, alias="RAG_RERANKER_REQUIRED")
+    rag_prompt_version: str = Field(default="6.3.1", alias="RAG_PROMPT_VERSION")
+    rag_max_answer_characters: int = Field(
+        default=16000, ge=256, le=100000, alias="RAG_MAX_ANSWER_CHARACTERS"
+    )
+    rag_guest_rate_limit_requests: int = Field(
+        default=5, ge=1, le=1000, alias="RAG_GUEST_RATE_LIMIT_REQUESTS"
+    )
+    rag_authenticated_rate_limit_requests: int = Field(
+        default=20, ge=1, le=1000, alias="RAG_AUTHENTICATED_RATE_LIMIT_REQUESTS"
+    )
+    rag_rate_limit_window_seconds: int = Field(
+        default=60, ge=1, le=3600, alias="RAG_RATE_LIMIT_WINDOW_SECONDS"
+    )
+
     document_revision_limit: int = Field(default=10, ge=1, le=100, alias="DOCUMENT_REVISION_LIMIT")
     chunk_target_tokens: int = Field(default=650, ge=50, le=4000, alias="CHUNK_TARGET_TOKENS")
     chunk_max_tokens: int = Field(default=900, ge=100, le=6000, alias="CHUNK_MAX_TOKENS")
@@ -343,6 +390,16 @@ class Settings(BaseSettings):
             raise ValueError("Search candidate limit не может превышать SEARCH_MAX_CANDIDATES")
         if self.reranker_top_n > self.search_max_candidates:
             raise ValueError("RERANKER_TOP_N не может превышать SEARCH_MAX_CANDIDATES")
+        if self.llm_think:
+            raise ValueError("LLM_THINK должен оставаться false: hidden reasoning не выдаётся")
+        if self.rag_rerank_limit > self.rag_candidate_limit:
+            raise ValueError("RAG_RERANK_LIMIT не может превышать RAG_CANDIDATE_LIMIT")
+        if self.rag_min_source_count > self.rag_max_source_count:
+            raise ValueError("RAG_MIN_SOURCE_COUNT не может превышать RAG_MAX_SOURCE_COUNT")
+        if self.rag_sources_limit > self.rag_max_source_count:
+            raise ValueError("RAG_SOURCES_LIMIT не может превышать RAG_MAX_SOURCE_COUNT")
+        if self.rag_context_token_budget + self.llm_max_output_tokens > self.llm_num_ctx:
+            raise ValueError("RAG context и LLM output не помещаются в LLM_NUM_CTX")
         return self
 
 

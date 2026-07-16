@@ -9,6 +9,13 @@ function jsonResponse(payload: unknown, status = 200): Response {
   });
 }
 
+function sseResponse(events: Array<[string, unknown]>): Response {
+  return new Response(
+    events.map(([event, data]) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`).join(''),
+    { status: 200, headers: { 'Content-Type': 'text/event-stream' } },
+  );
+}
+
 const feedback = {
   id: 'feedback-1',
   userId: 'user-1',
@@ -213,5 +220,84 @@ describe('HTTP API security boundary', () => {
     expect(firstRequestId).toHaveLength(36);
     expect(secondRequestId).toBe(firstRequestId);
     expect(JSON.stringify(first?.headers)).not.toContain('Bearer');
+  });
+
+  it('парсит POST SSE, показывает sources до tokens и не создаёт thinking event', async () => {
+    const response = {
+      responseId: '00000000-0000-4000-8000-000000000633',
+      answer: 'Используйте gather [1].',
+      sources: [],
+      model: 'qwen3:8b',
+      tookMs: 120,
+      searchTookMs: 20,
+      generationTookMs: 100,
+      confidence: 0.8,
+      insufficientContext: false,
+      citationValidationPassed: true,
+    };
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(jsonResponse({ csrfToken: 'rag-csrf' }))
+      .mockResolvedValueOnce(
+        sseResponse([
+          ['status', { stage: 'searching' }],
+          [
+            'sources',
+            {
+              sources: [
+                {
+                  documentId: 'document-1',
+                  title: 'asyncio',
+                  snippet: 'passage',
+                  sourceUrl: 'https://ru.stackoverflow.com/questions/1',
+                  tags: [],
+                  score: 0.9,
+                  saved: false,
+                },
+              ],
+            },
+          ],
+          ['token', { content: 'Используйте ' }],
+          ['token', { content: 'gather [1].' }],
+          ['done', response],
+        ]),
+      );
+    const order: string[] = [];
+    let answer = '';
+    const result = await httpApi.askQuestion(
+      { question: 'asyncio', mode: 'hybrid' },
+      {
+        onSources: () => order.push('sources'),
+        onChunk: (chunk) => {
+          order.push('token');
+          answer += chunk;
+        },
+      },
+    );
+    expect(order[0]).toBe('sources');
+    expect(answer).toBe('Используйте gather [1].');
+    expect(result).toMatchObject(response);
+    expect(fetchMock.mock.calls[1]?.[0]).toContain('/ask/stream');
+    expect(fetchMock.mock.calls[1]?.[1]?.headers).toMatchObject({
+      'X-CSRF-Token': 'rag-csrf',
+      Accept: 'text/event-stream',
+    });
+    expect(JSON.stringify(fetchMock.mock.calls[1]?.[1]?.body)).not.toContain('thinking');
+  });
+
+  it('безопасно отклоняет повреждённый SSE без бесконечного retry', async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(jsonResponse({ csrfToken: 'rag-csrf' }))
+      .mockResolvedValueOnce(
+        new Response('event: token\ndata: not-json\n\n', {
+          status: 200,
+          headers: { 'Content-Type': 'text/event-stream' },
+        }),
+      );
+    await expect(httpApi.askQuestion({ question: 'python', mode: 'hybrid' })).rejects.toMatchObject(
+      { code: 'SERVICE_UNAVAILABLE' },
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });

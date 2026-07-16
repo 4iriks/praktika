@@ -1,0 +1,20 @@
+{"id":"rag-01","query":"Как удалить дубликаты из списка и сохранить порядок?","expectedExternalIds":["stage4-1001"],"requiredPoints":["порядок","дубликат"],"expectedInsufficient":false,"notes":"list dedup"}
+{"id":"rag-02","query":"Как объединить два словаря в Python 3.9?","expectedExternalIds":["stage4-1002"],"requiredPoints":["словар","|"],"expectedInsufficient":false,"notes":"dict merge"}
+{"id":"rag-03","query":"Как параллельно дождаться нескольких корутин?","expectedExternalIds":["stage4-1003","stage4-1004"],"requiredPoints":["asyncio","gather"],"expectedInsufficient":false,"notes":"asyncio"}
+{"id":"rag-04","query":"Чем create_task отличается от gather?","expectedExternalIds":["stage4-1004"],"requiredPoints":["create_task","gather"],"expectedInsufficient":false,"notes":"async task semantics"}
+{"id":"rag-05","query":"Как читать большой CSV в pandas без загрузки целиком?","expectedExternalIds":["stage4-1005"],"requiredPoints":["chunksize","pandas"],"expectedInsufficient":false,"notes":"pandas chunks"}
+{"id":"rag-06","query":"Как устранить N+1 в Django ORM?","expectedExternalIds":["stage4-1006"],"requiredPoints":["select_related","N+1"],"expectedInsufficient":false,"notes":"django"}
+{"id":"rag-07","query":"Как получить JSON body во Flask?","expectedExternalIds":["stage4-1007"],"requiredPoints":["get_json","request"],"expectedInsufficient":false,"notes":"flask"}
+{"id":"rag-08","query":"Как работает Depends в FastAPI?","expectedExternalIds":["stage4-1008"],"requiredPoints":["Depends","зависим"],"expectedInsufficient":false,"notes":"fastapi"}
+{"id":"rag-09","query":"Как дождаться DOM элемента в Selenium?","expectedExternalIds":["stage4-1009"],"requiredPoints":["WebDriverWait","услов"],"expectedInsufficient":false,"notes":"selenium"}
+{"id":"rag-10","query":"Как выполнять операции NumPy без цикла for?","expectedExternalIds":["stage4-1010"],"requiredPoints":["вектор","NumPy"],"expectedInsufficient":false,"notes":"numpy"}
+{"id":"rag-11","query":"Как задать timeout и retry для requests?","expectedExternalIds":["stage4-1011"],"requiredPoints":["timeout","retry"],"expectedInsufficient":false,"notes":"requests"}
+{"id":"rag-12","query":"В чём разница classmethod и staticmethod?","expectedExternalIds":["stage4-1012"],"requiredPoints":["classmethod","staticmethod"],"expectedInsufficient":false,"notes":"classes"}
+{"id":"rag-13","query":"Как написать декоратор с аргументами и wraps?","expectedExternalIds":["stage4-1013"],"requiredPoints":["wraps","декоратор"],"expectedInsufficient":false,"notes":"decorators"}
+{"id":"rag-14","query":"Как объявить собственное исключение Python?","expectedExternalIds":["stage4-1014"],"requiredPoints":["Exception","class"],"expectedInsufficient":false,"notes":"exceptions"}
+{"id":"rag-15","query":"Почему возникает ModuleNotFoundError при запуске модуля?","expectedExternalIds":["stage4-1015"],"requiredPoints":["python -m","импорт"],"expectedInsufficient":false,"notes":"imports"}
+{"id":"rag-16","query":"Как создать и активировать virtualenv?","expectedExternalIds":["stage4-1016"],"requiredPoints":["venv","activate"],"expectedInsufficient":false,"notes":"venv"}
+{"id":"rag-17","query":"Как управлять транзакцией AsyncSession?","expectedExternalIds":["stage4-1017"],"requiredPoints":["AsyncSession","begin"],"expectedInsufficient":false,"notes":"sqlalchemy"}
+{"id":"rag-18","query":"Как параметризовать тесты pytest?","expectedExternalIds":["stage4-1018"],"requiredPoints":["parametrize","pytest"],"expectedInsufficient":false,"notes":"pytest"}
+{"id":"rag-19","query":"Как закрывать файл автоматически через with?","expectedExternalIds":["stage4-1019"],"requiredPoints":["with","закры"],"expectedInsufficient":false,"notes":"context manager"}
+{"id":"rag-20","query":"Как настроить квантовую телепортацию на Марс в Python?","expectedExternalIds":[],"requiredPoints":[],"expectedInsufficient":true,"notes":"out of corpus control"}
