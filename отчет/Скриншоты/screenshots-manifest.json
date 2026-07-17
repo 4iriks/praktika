@@ -1,0 +1,81 @@
+{
+  "generatedAt": "2026-07-16T19:37:22.203Z",
+  "baseUrl": "http://127.0.0.1:8080",
+  "viewport": "1600x1000",
+  "realModeConfirmed": true,
+  "realApiResponses": 49,
+  "searchQuery": "декораторы python",
+  "documentPath": "/documents/008f1712-802d-4197-a52c-be37d2e743e9",
+  "screenshots": [
+    {
+      "file": "01_Главная.png",
+      "label": "Главная страница",
+      "url": "/"
+    },
+    {
+      "file": "02_Поиск_BM25.png",
+      "label": "Поиск BM25",
+      "url": "/search?q=%D0%B4%D0%B5%D0%BA%D0%BE%D1%80%D0%B0%D1%82%D0%BE%D1%80%D1%8B%20python&view=documents&mode=bm25&page=1&page_size=6&sort=relevance"
+    },
+    {
+      "file": "03_Поиск_Vector.png",
+      "label": "Поиск Vector",
+      "url": "/search?q=%D0%B4%D0%B5%D0%BA%D0%BE%D1%80%D0%B0%D1%82%D0%BE%D1%80%D1%8B%20python&view=documents&mode=vector&page=1&page_size=6&sort=relevance"
+    },
+    {
+      "file": "04_Hybrid_score_breakdown.png",
+      "label": "Hybrid и score breakdown",
+      "url": "/search?q=%D0%B4%D0%B5%D0%BA%D0%BE%D1%80%D0%B0%D1%82%D0%BE%D1%80%D1%8B%20python&view=documents&mode=hybrid&page=1&page_size=6&sort=relevance"
+    },
+    {
+      "file": "05_RAG_streaming.png",
+      "label": "RAG streaming",
+      "url": "/search?q=%D0%9A%D0%B0%D0%BA%20%D1%80%D0%B0%D0%B1%D0%BE%D1%82%D0%B0%D1%8E%D1%82%20%D0%B4%D0%B5%D0%BA%D0%BE%D1%80%D0%B0%D1%82%D0%BE%D1%80%D1%8B%20%D0%B2%20Python%3F&view=answer&mode=hybrid&page=1&sort=relevance"
+    },
+    {
+      "file": "06_RAG_готовый_ответ.png",
+      "label": "Готовый RAG-ответ с цитатами",
+      "url": "/search?q=%D0%9A%D0%B0%D0%BA%20%D1%80%D0%B0%D0%B1%D0%BE%D1%82%D0%B0%D1%8E%D1%82%20%D0%B4%D0%B5%D0%BA%D0%BE%D1%80%D0%B0%D1%82%D0%BE%D1%80%D1%8B%20%D0%B2%20Python%3F&view=answer&mode=hybrid&page=1&sort=relevance"
+    },
+    {
+      "file": "07_Документ.png",
+      "label": "Страница документа",
+      "url": "/documents/008f1712-802d-4197-a52c-be37d2e743e9"
+    },
+    {
+      "file": "08_Профиль_USER.png",
+      "label": "Профиль USER",
+      "url": "/profile"
+    },
+    {
+      "file": "09_Редакторская_панель.png",
+      "label": "Редакторская панель",
+      "url": "/editor"
+    },
+    {
+      "file": "10_Админ-панель.png",
+      "label": "Админ-панель",
+      "url": "/admin"
+    },
+    {
+      "file": "11_Источники.png",
+      "label": "Источники данных",
+      "url": "/admin/sources"
+    },
+    {
+      "file": "12_Jobs.png",
+      "label": "Фоновые jobs",
+      "url": "/admin/jobs"
+    },
+    {
+      "file": "13_Audit.png",
+      "label": "Журнал audit",
+      "url": "/admin/audit"
+    },
+    {
+      "file": "14_System_status.png",
+      "label": "System status",
+      "url": "/admin/system"
+    }
+  ]
+}
