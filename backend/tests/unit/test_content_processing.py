@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import warnings
+
 from app.integrations.stackexchange.schemas import StackExchangeAnswer, StackExchangeQuestion
 from app.processing.canonical import build_canonical_document
 from app.processing.html import CleanedContent, ContentBlock, clean_html, clean_title
@@ -101,6 +103,13 @@ def test_html_normalization_is_unicode_and_line_ending_deterministic() -> None:
     assert "Café Python" in first.text
     assert "    print('✓')" in first.text
     assert clean_title("<b>  A &amp; B </b>") == "A & B"
+
+
+def test_title_that_looks_like_path_does_not_emit_parser_warning() -> None:
+    with warnings.catch_warnings(record=True) as captured:
+        warnings.simplefilter("always")
+        assert clean_title("requirements.txt") == "requirements.txt"
+    assert captured == []
 
 
 def test_answer_selection_is_stable_and_never_duplicates_accepted() -> None:

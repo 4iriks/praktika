@@ -3,12 +3,13 @@ from __future__ import annotations
 import html
 import re
 import unicodedata
+import warnings
 from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Literal
 from urllib.parse import urlsplit
 
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, MarkupResemblesLocatorWarning
 from bs4.element import Comment, NavigableString, Tag
 
 BlockKind = Literal["heading", "paragraph", "list", "quote", "code"]
@@ -66,7 +67,9 @@ class CleanedContent:
 
 def clean_title(value: str, *, maximum_characters: int = 500) -> str:
     decoded = html.unescape(value.replace("\r\n", "\n").replace("\r", "\n"))
-    plain = BeautifulSoup(decoded, "lxml").get_text(" ", strip=True)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", MarkupResemblesLocatorWarning)
+        plain = BeautifulSoup(decoded, "lxml").get_text(" ", strip=True)
     normalized = _normalize_text_block(unicodedata.normalize("NFC", plain))
     return normalized[:maximum_characters].strip()
 

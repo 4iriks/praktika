@@ -75,6 +75,18 @@ make index-status
 RUN_FULL_IMPORT=1 make import-full SOURCE_ID=<uuid>
 ```
 
+Для массового первичного наполнения без расходования API quota поддерживается
+официальный XML Data Dump:
+
+```bash
+RUN_DATA_DUMP_IMPORT=1 \
+DUMP_ARCHIVE=artifacts/raw/stackexchange/ru.stackoverflow.com.7z \
+make import-dump
+```
+
+Схема работы и резервные источники описаны в
+[`docs/stackexchange-data-sources.md`](docs/stackexchange-data-sources.md).
+
 Ни `first-run`, ни tests не запускают живой импорт. Источник, attribution и URL сохраняются;
 синтетические записи не учитываются как выполнение минимального корпуса.
 

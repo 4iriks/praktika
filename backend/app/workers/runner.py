@@ -266,7 +266,6 @@ class WorkerRunner:
     async def _heartbeat_once(self) -> None:
         worker_id = self._require_worker_id()
         async with self._session_factory() as session, session.begin():
-            await heartbeat_worker_instance(session, worker_id=worker_id)
             if self._current_job_id is not None:
                 await heartbeat_job(
                     session,
@@ -274,6 +273,8 @@ class WorkerRunner:
                     worker_id=worker_id,
                     lease_seconds=self._settings.worker_lease_seconds,
                 )
+            else:
+                await heartbeat_worker_instance(session, worker_id=worker_id)
 
     async def _recover_stale(self) -> None:
         async with self._session_factory() as session, session.begin():

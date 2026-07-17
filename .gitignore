@@ -14,6 +14,7 @@ postgres-data/
 artifacts/*.json
 artifacts/*.csv
 artifacts/*.md
+artifacts/raw/
 backups/
 playwright-report/
 test-results/

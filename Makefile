@@ -12,7 +12,7 @@ COMPOSE ?= $(shell if docker compose version >/dev/null 2>&1; then \
 	models-pull embedding-model-pull llm-model-pull ollama-status ollama-models \
 	reranker-up reranker-logs reranker-model-pull search-evaluate rag-evaluate \
 	local-model-smoke first-run demo-up demo-down demo-restart demo-status demo-logs \
-	demo-check demo-reset models-check import-smoke import-minimum import-full \
+	demo-check demo-reset models-check import-smoke import-minimum import-full import-dump \
 	evaluate e2e backup restore-check disk-report data-check index-check corpus-manifest \
 	release-manifest verify-all cleanup-safe
 
@@ -67,6 +67,20 @@ import-full:
 	@test -n "$(SOURCE_ID)" || (echo "Укажите SOURCE_ID=<uuid>" && exit 1)
 	$(COMPOSE) run --rm --no-deps -e CONFIRM_FULL_SYNC=YES worker \
 		python -m app.scripts.enqueue_sync $(SOURCE_ID) --mode INITIAL
+
+import-dump:
+	@test "$(RUN_DATA_DUMP_IMPORT)" = "1" || \
+		(echo "Требуется RUN_DATA_DUMP_IMPORT=1" && exit 1)
+	@test -n "$(DUMP_ARCHIVE)" || \
+		(echo "Укажите DUMP_ARCHIVE=/path/to/ru.stackoverflow.com.7z" && exit 1)
+	@test -f "$(DUMP_ARCHIVE)" || (echo "Архив не найден: $(DUMP_ARCHIVE)" && exit 1)
+	$(COMPOSE) run --rm --no-deps --user "$(shell id -u):$(shell id -g)" \
+		-v "$(CURDIR)/artifacts:/app/artifacts" -e ARTIFACTS_DIR=/app/artifacts \
+		-v "$(abspath $(DUMP_ARCHIVE)):/data/ru.stackoverflow.com.7z:ro" worker \
+		python -m app.scripts.import_stackexchange_dump /data/ru.stackoverflow.com.7z \
+		--target-total "$${DUMP_TARGET_TOTAL:-25000}" \
+		--concurrency "$${DUMP_IMPORT_CONCURRENCY:-4}" \
+		$(if $(filter 1,$(DUMP_REPAIR_ANSWER_GAPS)),--repair-answer-gaps,--max-failures 25)
 
 corpus-manifest:
 	$(ARTIFACT_RUN) python -m app.scripts.corpus_manifest

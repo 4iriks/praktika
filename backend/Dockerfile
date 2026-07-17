@@ -7,6 +7,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 RUN groupadd --system pyanswer \
     && useradd --system --gid pyanswer --home-dir /app pyanswer
 
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends 7zip \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 COPY pyproject.toml README.md ./
