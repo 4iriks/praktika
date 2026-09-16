@@ -22,4 +22,4 @@ evidence that its live dependency passed.
 | ERD and SQL JOIN/GROUP/subquery | implemented | `docs/erd.md`, `docs/final/sql-demo.sql` | manual/read-only | Names follow latest migration |
 | Reproducible start | implemented | `make first-run`, `make demo-up` | `make verify-all` | Models/full import require consent |
 | Report/presentation/video | implemented | `docs/final/` | documentation review | Numeric results reference artifacts |
-| Individual contribution | documented | `docs/final/contribution.md` | author confirmation | Student name is placeholder |
+| Individual contribution | pending confirmation | `docs/final/contribution.md` | author confirmation | No unsupported percentage is stated |

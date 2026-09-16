@@ -1,5 +1,17 @@
 # PyAnswer
 
+Локальный проект по поиску ответов на вопросы о Python. Он объединяет BM25 и dense-поиск,
+сливает результаты через weighted RRF, затем использует reranker и RAG с цитированием
+источников. Для интервью важны три части: [индексация](docs/stage6-search-index.md),
+[гибридное ранжирование](docs/hybrid-ranking.md) и
+[оценка поиска](docs/retrieval-evaluation.md).
+
+**Статус метрик.** В публичном репозитории есть код оценки и заготовки запросов, но
+`evaluation/search-dataset.jsonl` (40 записей) и `evaluation/rag-dataset.jsonl`
+(20 записей) пока не содержат вручную подтверждённых qrels (`reviewed=false`).
+Сравнение BM25, dense, hybrid и reranker следует публиковать только после разметки и
+реального прогона на проиндексированном корпусе. Численных улучшений этот README не заявляет.
+
 PyAnswer — локальная поисковая и RAG-система по вопросам о Python со Stack Overflow на
 русском. PostgreSQL хранит исходный корпус, Qdrant — производный dense/sparse индекс, а
 Ollama запускает локальные embedding- и generation-модели. Browser работает только с единым
